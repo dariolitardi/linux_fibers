@@ -5,11 +5,12 @@
 #include <linux/fs.h>
 #include <linux/cdev.h>
 #include <linux/device.h>
-#include<linux/slab.h>                 //kmalloc()
-#include<linux/uaccess.h>              //copy_to/from_user()
+#include <linux/slab.h>                 //kmalloc()
+#include <linux/uaccess.h>              //copy_to/from_user()
 #include <linux/ioctl.h>
  
- 
+
+#define DEV_NAME "etx_device"
 #define WR_VALUE _IOW('a','a',int32_t*)
 #define RD_VALUE _IOR('a','b',int32_t*)
  
@@ -27,8 +28,7 @@ static ssize_t etx_read(struct file *filp, char __user *buf, size_t len,loff_t *
 static ssize_t etx_write(struct file *filp, const char *buf, size_t len, loff_t * off);
 static long etx_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
  
-static struct file_operations fops =
-{
+static struct file_operations fops = {
         .owner          = THIS_MODULE,
         .read           = etx_read,
         .write          = etx_write,
@@ -37,31 +37,27 @@ static struct file_operations fops =
         .release        = etx_release,
 };
  
-static int etx_open(struct inode *inode, struct file *file)
-{
-        printk(KERN_INFO "Device File Opened...!!!\n");
+static int etx_open(struct inode *inode, struct file *file){
+        printk(KERN_INFO "DEBUG OPEN\n");
+	printk(KERN_INFO "DEBUG PID %d\n",current->pid);
         return 0;
 }
  
-static int etx_release(struct inode *inode, struct file *file)
-{
-        printk(KERN_INFO "Device File Closed...!!!\n");
+static int etx_release(struct inode *inode, struct file *file){
+        printk(KERN_INFO "DEBUG RELEASE\n");
         return 0;
 }
  
-static ssize_t etx_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
-{
-        printk(KERN_INFO "Read Function\n");
+static ssize_t etx_read(struct file *filp, char __user *buf, size_t len, loff_t *off){
+        printk(KERN_INFO "DEBUG READ\n");
         return 0;
 }
-static ssize_t etx_write(struct file *filp, const char __user *buf, size_t len, loff_t *off)
-{
-        printk(KERN_INFO "Write function\n");
+static ssize_t etx_write(struct file *filp, const char __user *buf, size_t len, loff_t *off){
+        printk(KERN_INFO "DEBUG WRITE\n");
         return 0;
 }
  
-static long etx_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
-{
+static long etx_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
          switch(cmd) {
                 case WR_VALUE:
                         copy_from_user(&value ,(int32_t*) arg, sizeof(value));
@@ -75,8 +71,7 @@ static long etx_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 }
  
  
-static int __init etx_driver_init(void)
-{
+static int __init etx_driver_init(void){
         /*Allocating Major number*/
         if((alloc_chrdev_region(&dev, 0, 1, "etx_Dev")) <0){
                 printk(KERN_INFO "Cannot allocate major number\n");
@@ -85,7 +80,7 @@ static int __init etx_driver_init(void)
         printk(KERN_INFO "Major = %d Minor = %d \n",MAJOR(dev), MINOR(dev));
  
         /*Creating cdev structure*/
-        cdev_init(&etx_cdev,&fops);
+        cdev_init(&etx_cdev,&fops); // qui si crea il file nel filesystem sys che viene messe in memoria con le sue strutture
         etx_cdev.owner = THIS_MODULE;
         etx_cdev.ops = &fops;
  
@@ -102,22 +97,20 @@ static int __init etx_driver_init(void)
         }
  
         /*Creating device*/
-        if((device_create(dev_class,NULL,dev,NULL,"etx_device")) == NULL){
+        if((device_create(dev_class,NULL,dev,NULL,DEV_NAME)) == NULL){
             printk(KERN_INFO "Cannot create the Device 1\n");
             goto r_device;
         }
         printk(KERN_INFO "Device Driver Insert...Done!!!\n");
     return 0;
- 
 r_device:
         class_destroy(dev_class);
 r_class:
         unregister_chrdev_region(dev,1);
-        return -1;
+	return -1;
 }
  
-void __exit etx_driver_exit(void)
-{
+void __exit etx_driver_exit(void){
         device_destroy(dev_class,dev);
         class_destroy(dev_class);
         cdev_del(&etx_cdev);
