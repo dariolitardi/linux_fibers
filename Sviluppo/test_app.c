@@ -21,21 +21,18 @@
  
 int main()
 {
-        int fd;
-        int32_t value, number;
- 
-        printf("Test Open\n");
-        fd = open("/dev/" DEV_NAME, O_RDWR);
-        if(fd < 0) {
-                printf("Cannot open device file...\n");
-                return 0;
-        }
- 
-        printf("Test switch to fiber\n");
-        ioctl(fd, WR_VALUE, (int32_t*) &number); 
- 
-        printf("Value is %d\n", value);
- 
-        printf("Test Close\n");
-        close(fd);
+	int fd;
+
+	printf("Test Open\n");
+	fd = open("/dev/" DEV_NAME, O_RDWR);
+	if(fd < 0) {
+		printf("Cannot open device file...\n");
+		return 0;
+	}
+
+	printf("Test fib_convert\n");
+	ioctl(fd, FIB_CONVERT, (int32_t*) 0); 
+	while(1);
+	printf("Test Close\n");
+	close(fd);
 }
