@@ -10,6 +10,12 @@
 #include <linux/ioctl.h>
 #include <linux/string.h>
 #include <linux/types.h>
+#include <linux/proc_fs.h>
+#include <linux/dirent.h>
+#include <linux/path.h>
+#include <linux/dcache.h>
+//#include <proc/internal.h>
+//usare proc_pid_readdir e proc_pid_lookup
 #include "Strutture.h"
 
 
@@ -58,6 +64,38 @@ static struct file_operations fops = {
 	.release        = fib_release,
 };
 
+static struct proc_dir_entry* get_proc_dir_entry(char* name){
+	struct proc_dir_entry* ret;
+	DIR* dirp;
+	struct dirent* dp;
+	char file_path[255];
+	FILE* fp;
+	dentry* dentry;
+	struct inode* inode;
+
+	if ((dirp = opendir("/proc")) == NULL) {
+		return NULL;
+	}
+
+	while((dp = readdir(dirp)) != NULL){
+		if(dp->d_type == DT_DIR && isdigit(dp->d_name[0])){
+			if (strcmp(dp->d_name,name)==0){
+				sprintf(file_path,"/proc/%s",name);	//Nome path completo
+				if (fp = open(file_path,'r') == NULL){
+					return NULL;
+				}
+				dentry = fp->f_path.dentry;
+				inode = dentry->d_inode;
+				ret = PDE(inode);
+				close(fp);
+			}
+		}
+	}
+
+	closedir(dirp);
+	return ret;
+}
+
 //Aggiungere i lock
 static int fib_open(struct inode *inode, struct file *file){
 	printk(KERN_INFO "DEBUG OPEN\n");
@@ -75,6 +113,18 @@ static int fib_open(struct inode *inode, struct file *file){
 		processo->next = tmp;
 	}
 
+	//ProcFS
+	char dir_str[12];
+	printk(KERN_INFO "DEBUG PROC 1\n");
+	snprintf(dir_str,10,"%d",(int)current->pid);
+	printk(KERN_INFO "DEBUG PROC 2\n");
+	memcpy(dir_str+4,"/fibers",7);	//Concatenazione path
+	dir_str[4] = '\0';
+	printk(KERN_INFO "DEBUG PROC 3\n");
+	printk(KERN_INFO "DEBUG PROC %s\n",dir_str);
+	struct proc_dir_entry* dir;
+	dir = proc_mkdir(dir_str,NULL);
+	printk(KERN_INFO "DEBUG %l",(long)dir);
 	return 0;
 }
 
@@ -101,6 +151,13 @@ static int fib_release(struct inode *inode, struct file *file){
 		processo_precedente->next = bersaglio->next;
 		}
 	}
+	
+	//ProcFS
+	char dir_str[12];
+	snprintf(dir_str,10,"%d",(int)current->pid);
+	memcpy(dir_str+4,"/fibers",7);	//Concatenazione path
+	//Tocca fare la deallocazione profonda
+	//remove_proc_subtree("PROVA",NULL);
 
 	//Deallocazione profonda di bersaglio
 	//Deallocazione lista fiber
