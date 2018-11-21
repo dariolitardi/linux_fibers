@@ -14,8 +14,8 @@
 #include <linux/dirent.h>
 #include <linux/path.h>
 #include <linux/dcache.h>
-//#include <proc/internal.h>
-//usare proc_pid_readdir e proc_pid_lookup
+#include <linux/kprobes.h>
+
 #include "Strutture.h"
 
 
@@ -64,37 +64,78 @@ static struct file_operations fops = {
 	.release        = fib_release,
 };
 
-static struct proc_dir_entry* get_proc_dir_entry(char* name){
-	struct proc_dir_entry* ret;
-	DIR* dirp;
-	struct dirent* dp;
-	char file_path[255];
-	FILE* fp;
-	dentry* dentry;
-	struct inode* inode;
+//PID stuff with kprobe
+static unsigned int counter = 0;
+static struct pid_entry* normal_tgid_base_stuff = tgid_base_stuff;
+static struct pid_entry* new_tgid_base_stuff;
+//tgid_base stuff at 0xffffffff8c02be80
+//use cat /proc/kallsyms | grep tgid_base_stuff
 
-	if ((dirp = opendir("/proc")) == NULL) {
-		return NULL;
-	}
-
-	while((dp = readdir(dirp)) != NULL){
-		if(dp->d_type == DT_DIR && isdigit(dp->d_name[0])){
-			if (strcmp(dp->d_name,name)==0){
-				sprintf(file_path,"/proc/%s",name);	//Nome path completo
-				if (fp = open(file_path,'r') == NULL){
-					return NULL;
-				}
-				dentry = fp->f_path.dentry;
-				inode = dentry->d_inode;
-				ret = PDE(inode);
-				close(fp);
-			}
+int Pre_Handler_Main(struct kprobe *p, struct pt_regs *regs){ 
+    printk("%d\n",((struct task_struct*)regs->dx)->pid);
+    //
+    pid_t id = ((struct task_struct*)regs->dx)->pid;
+    struct Fiber_Processi* tmp = Lista_Processi;
+    while (tmp != NULL){
+		if (tmp->id == id){
+			break;
 		}
+		tmp = tmp->next;
 	}
+	
+	if (tmp){
+		if (new_tgid_base_stuff != NULL){
+			kfree(new_tgid_base_stuff);
+		}
+		new_tgid_base_stuff = (struct pid_entry*) kmalloc((ARRAY_SIZE(tgid_base_stuff)+1)*sizeof(struct pid_entry),GFP_KERNEL);
+		memcpy(new_tgid_base_stuff,tgid_base_stuff,ARRAY_SIZE(tgid_base_stuff)*sizeof(struct pid_entry));
+		
+		struct pid_entry* fibers_entry = (struct pid_entry*) kmalloc(sizeof(pid_entry),GFP_KERNEL);
+		fibers_entry->name = "Fibers";
+		fibers_entry->len = 6;
+		fibers_entry->mode = S_IFDIR|S_IRUGO|S_IXUGO;
+		fibers_entry->iop = NULL;//Questo coso serve per i metacazzi
+		fibers_entry->fop = NULL;
+		fibers_entry->op = {};
+		
+		memcpy(new_tgid_base_stuff+(ARRAY_SIZE(tgid_base_stuff)*sizeof(pid_entry)),fiber_entry,sizeof(pid_entry));
+		
+		kfree(fibers_entry);
+		
+		//register_kprobe(&kp_main);
+		//tgid_base_stuff = new_tgid_base_stuff;
+		
+		counter++;
+	}
+    
+    return 0;
+} 
 
-	closedir(dirp);
-	return ret;
+void Post_Handler_Main(struct kprobe *p, struct pt_regs *regs, unsigned long flags){ 
+    if (counter){
+		//unregister_kprobe(&kp_main);
+		//tgid_base_stuff = normal_tgid_base_stuff;
+		if (new_tgid_base_stuff != NULL){
+			kfree(new_tgid_base_stuff);
+		}
+		counter=0;
+	}
 }
+
+int Pre_Handler_Aux(struct kprobe *p, struct pt_regs *regs){
+	struct pid_entry* tgt = regs->di;
+	regs->di = new_tgid_base_stuff;
+	return 0;
+}
+
+void Post_Handler_Aux(struct kprobe *p, struct pt_regs *regs, unsigned long flags){
+	
+}
+
+static struct kprobe kp_main;
+static struct kprobe kp_aux; 
+//End pidstuff
+
 
 //Aggiungere i lock
 static int fib_open(struct inode *inode, struct file *file){
@@ -112,19 +153,7 @@ static int fib_open(struct inode *inode, struct file *file){
 		Lista_Processi = processo;
 		processo->next = tmp;
 	}
-
-	//ProcFS
-	char dir_str[12];
-	printk(KERN_INFO "DEBUG PROC 1\n");
-	snprintf(dir_str,10,"%d",(int)current->pid);
-	printk(KERN_INFO "DEBUG PROC 2\n");
-	memcpy(dir_str+4,"/fibers",7);	//Concatenazione path
-	dir_str[4] = '\0';
-	printk(KERN_INFO "DEBUG PROC 3\n");
-	printk(KERN_INFO "DEBUG PROC %s\n",dir_str);
-	struct proc_dir_entry* dir;
-	dir = proc_mkdir(dir_str,NULL);
-	printk(KERN_INFO "DEBUG %l",(long)dir);
+	
 	return 0;
 }
 
@@ -152,13 +181,6 @@ static int fib_release(struct inode *inode, struct file *file){
 		}
 	}
 	
-	//ProcFS
-	char dir_str[12];
-	snprintf(dir_str,10,"%d",(int)current->pid);
-	memcpy(dir_str+4,"/fibers",7);	//Concatenazione path
-	//Tocca fare la deallocazione profonda
-	//remove_proc_subtree("PROVA",NULL);
-
 	//Deallocazione profonda di bersaglio
 	//Deallocazione lista fiber
 	if (bersaglio->lista_fiber != NULL){
@@ -290,36 +312,48 @@ static long flsSetValue(unsigned long* id, unsigned long pos, long val){
 
 static int __init fib_driver_init(void){
 	printk(KERN_INFO "DEBUG INIT\n");
-	/*Allocating Major number*/
+	
+	//Allocating Major number
 	if((alloc_chrdev_region(&dev, 0, 1, "fib_Dev")) <0){
 		printk(KERN_INFO "Cannot allocate major number\n");
 		return -1;
 	}
 	printk(KERN_INFO "Major = %d Minor = %d \n",MAJOR(dev), MINOR(dev));
 
-	/*Creating cdev structure*/
+	//reating cdev structure
 	cdev_init(&fib_cdev,&fops);
 	fib_cdev.owner = THIS_MODULE;
 	fib_cdev.ops = &fops;
 
-	/*Adding character device to the system*/
+	//Adding character device to the system
 	if((cdev_add(&fib_cdev,dev,1)) < 0){
 		printk(KERN_INFO "Cannot add the device to the system\n");
 		goto r_class;
 	}
 
-	/*Creating struct class*/
+	//Creating struct class
 	if((dev_class = class_create(THIS_MODULE,"fib_class")) == NULL){
 		printk(KERN_INFO "Cannot create the struct class\n");
 		goto r_class;
 	}
 
-	/*Creating device*/
+	//Create device
 	if((device_create(dev_class,NULL,dev,NULL,DEV_NAME)) == NULL){ // qui si crea il file nel filesystem dev che viene messe in memoria con le sue strutture
 		printk(KERN_INFO "Cannot create the Device 1\n");
 		goto r_device;
 	}
 	printk(KERN_INFO "Device Driver Insert...Done!!!\n");
+	
+	//Register Proc kprobe
+	kp_main.pre_handler = Pre_Handler_Main; 
+    kp_main.post_handler = Post_Handler_Main; 
+    kp_main.addr = (kprobe_opcode_t *)0xffffffff8ba7c960; 
+    register_kprobe(&kp_main);
+    
+    kp_aux.pre_handler = Pre_Handler_Aux; 
+    kp_aux.post_handler = Post_Handler_Aux; 
+    kp_aux.addr = (kprobe_opcode_t *)0xffffffff8ba7c960; 
+    
 	return 0;
 r_device:
 	class_destroy(dev_class);
@@ -330,6 +364,10 @@ r_class:
 
 void __exit fib_driver_exit(void){
 	printk(KERN_INFO "DEBUG EXIT\n");
+	//Unregister Proc kprobe
+	unregister_kprobe(&kp_main);
+	
+	//Destroy device
 	device_destroy(dev_class,dev);
 	class_destroy(dev_class);
 	cdev_del(&fib_cdev);

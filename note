@@ -1,0 +1,7 @@
+Accesso a Proc/PID
+Lavorare su proc_pid_lookup e proc_pid_readdir
+Trappare con kprobe proc_pid_instantiate
+modificare tgid_base_stuff (array di pid_entry)
+Aggiungere l'entry "Fibers" all'array
+Nota, tgid_base_stuff è globale
+usare cat /proc/kallsyms | grep tgid_base_stuff per acchiappare i puntatori

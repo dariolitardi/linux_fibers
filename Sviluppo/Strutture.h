@@ -20,3 +20,13 @@ struct Fiber_Processi{
 	struct Lista_Fiber* lista_fiber;
 	struct Fiber_Processi* next;
 };
+
+//Strutture kernel che non sono visibili
+struct pid_entry {
+	const char *name;
+	unsigned int len;
+	umode_t mode;
+	const struct inode_operations *iop;
+	const struct file_operations *fop;
+	union proc_op op;
+};
