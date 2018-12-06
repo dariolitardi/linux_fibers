@@ -47,8 +47,8 @@ static ssize_t fib_write(struct file *filp, const char *buf, size_t len, loff_t 
 static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 
 static void fib_convert(void);
-static void fib_create(void);
-static void fib_switch_to(void);
+static void fib_create(void* func);
+static void fib_switch_to(unsigned long id);
 
 static unsigned long flsAlloc(void);
 static void flsFree(unsigned long id);
@@ -66,15 +66,28 @@ static struct file_operations fops = {
 
 //PID stuff with kprobe
 static unsigned int counter = 0;
-static struct pid_entry* normal_tgid_base_stuff = tgid_base_stuff;
+static kprobe_opcode_t* kprobe_readdir_func;//0xffffffff83c7c960;
+static kprobe_opcode_t* kprobe_lookup_func;
+//static struct pid_entry* tgid_base_stuff;//0xffffffff8422be80;
 static struct pid_entry* new_tgid_base_stuff;
-//tgid_base stuff at 0xffffffff8c02be80
+//tgid_base stuff at ffffffff8422be80
 //use cat /proc/kallsyms | grep tgid_base_stuff
 
-int Pre_Handler_Main(struct kprobe *p, struct pt_regs *regs){ 
-    printk("%d\n",((struct task_struct*)regs->dx)->pid);
-    //
-    pid_t id = ((struct task_struct*)regs->dx)->pid;
+void Make_new_tgid_base_stuff(struct pt_regs *regs){
+	//Controlla se il processo è rilevante
+	pid_t id = 0;
+	struct file* file = (struct file*) regs->di;
+	
+	/*
+	if (file){
+		if(file->f_path.dentry != NULL){
+			if(file->f_path.dentry->d_name.name != NULL){
+				printk(KERN_INFO "NOME DIR %p",file->f_path.dentry->d_name.name);
+			}
+		}
+	}
+	*/
+	
     struct Fiber_Processi* tmp = Lista_Processi;
     while (tmp != NULL){
 		if (tmp->id == id){
@@ -83,57 +96,76 @@ int Pre_Handler_Main(struct kprobe *p, struct pt_regs *regs){
 		tmp = tmp->next;
 	}
 	
+	//Crea nuova cartella
+	struct pid_entry* tgid_base_stuff = (struct pid_entry*)regs->dx;
 	if (tmp){
+		printk(KERN_INFO "SOSTITUZIONE ARRAY");
+		
 		if (new_tgid_base_stuff != NULL){
 			kfree(new_tgid_base_stuff);
 		}
-		new_tgid_base_stuff = (struct pid_entry*) kmalloc((ARRAY_SIZE(tgid_base_stuff)+1)*sizeof(struct pid_entry),GFP_KERNEL);
-		memcpy(new_tgid_base_stuff,tgid_base_stuff,ARRAY_SIZE(tgid_base_stuff)*sizeof(struct pid_entry));
+		new_tgid_base_stuff = (struct pid_entry*) kmalloc((sizeof(tgid_base_stuff)/sizeof(struct pid_entry)+1)*sizeof(struct pid_entry),GFP_KERNEL);
+		memcpy(new_tgid_base_stuff,tgid_base_stuff,sizeof(tgid_base_stuff));
 		
-		struct pid_entry* fibers_entry = (struct pid_entry*) kmalloc(sizeof(pid_entry),GFP_KERNEL);
+		struct pid_entry* fibers_entry = (struct pid_entry*) kmalloc(sizeof(struct pid_entry),GFP_KERNEL);
 		fibers_entry->name = "Fibers";
 		fibers_entry->len = 6;
 		fibers_entry->mode = S_IFDIR|S_IRUGO|S_IXUGO;
-		fibers_entry->iop = NULL;//Questo coso serve per i metacazzi
-		fibers_entry->fop = NULL;
-		fibers_entry->op = {};
 		
-		memcpy(new_tgid_base_stuff+(ARRAY_SIZE(tgid_base_stuff)*sizeof(pid_entry)),fiber_entry,sizeof(pid_entry));
+		int i;
+		for (i=0;i<sizeof(tgid_base_stuff)/sizeof(struct pid_entry);i++){
+			if (strcmp((tgid_base_stuff)[i].name,"attr")==0){
+				fibers_entry->iop = (tgid_base_stuff)[i].iop;//Questo coso serve a copiare i fop/iop dalla cartella attr
+				fibers_entry->fop = (tgid_base_stuff)[i].fop;
+			}
+		}
+//		fibers_entry->op = (union proc_op) NULL;
+		
+		memcpy(new_tgid_base_stuff+(sizeof(tgid_base_stuff)),fibers_entry,sizeof(struct pid_entry));
 		
 		kfree(fibers_entry);
 		
-		//register_kprobe(&kp_main);
-		//tgid_base_stuff = new_tgid_base_stuff;
-		
-		counter++;
+		regs->dx = new_tgid_base_stuff;
 	}
-    
+}
+
+int Pre_Handler_Readdir(struct kprobe *p, struct pt_regs *regs){ 
+    printk(KERN_INFO "DEBUG KPROBE READDIR PID %d\n",((struct task_struct*)regs->dx)->pid);
+	printk(KERN_INFO "DEBUG KPROBE READDIR %p , %p\n",(void*)regs->cx,(void*)kallsyms_lookup_name("tgid_base_stuff"));
+
+	Make_new_tgid_base_stuff(regs);
+	
     return 0;
 } 
 
-void Post_Handler_Main(struct kprobe *p, struct pt_regs *regs, unsigned long flags){ 
-    if (counter){
-		//unregister_kprobe(&kp_main);
-		//tgid_base_stuff = normal_tgid_base_stuff;
-		if (new_tgid_base_stuff != NULL){
-			kfree(new_tgid_base_stuff);
-		}
-		counter=0;
+void Post_Handler_Readdir(struct kprobe *p, struct pt_regs *regs, unsigned long flags){ 
+    if (new_tgid_base_stuff){
+		kfree(new_tgid_base_stuff);
+		new_tgid_base_stuff = NULL;
 	}
 }
 
-int Pre_Handler_Aux(struct kprobe *p, struct pt_regs *regs){
-	struct pid_entry* tgt = regs->di;
-	regs->di = new_tgid_base_stuff;
+int Pre_Handler_Lookup(struct kprobe *p, struct pt_regs *regs){
+    printk(KERN_INFO "DEBUG KPROBE LOOKUP PID %d\n",((struct task_struct*)regs->dx)->pid);
+	printk(KERN_INFO "DEBUG KPROBE LOOKUP %p , %p\n",(void*)regs->cx,(void*)kallsyms_lookup_name("tgid_base_stuff"));
+
+	//struct pid_entry* tgt = regs->di;
+	//regs->di = new_tgid_base_stuff;
+
+	Make_new_tgid_base_stuff(regs);
+	
 	return 0;
 }
 
-void Post_Handler_Aux(struct kprobe *p, struct pt_regs *regs, unsigned long flags){
-	
+void Post_Handler_Lookup(struct kprobe *p, struct pt_regs *regs, unsigned long flags){
+	if (new_tgid_base_stuff){
+		kfree(new_tgid_base_stuff);
+		new_tgid_base_stuff = NULL;
+	}
 }
 
-static struct kprobe kp_main;
-static struct kprobe kp_aux; 
+static struct kprobe kp_readdir;
+static struct kprobe kp_lookup; 
 //End pidstuff
 
 
@@ -230,7 +262,7 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 		case FIB_FLS_GET:
 			printk(KERN_INFO "DEBUG IOCTL FIB_FLS_GET\n");
 			long tmp_val = flsGetValue(arg,arg);//id, pos
-		copy_to_user(&arg,&tmp_val,sizeof(tmp_id));
+			copy_to_user(&arg,&tmp_val,sizeof(tmp_id));
 			break;
 		case FIB_FLS_SET: //Struttura necessaria
 			printk(KERN_INFO "DEBUG IOCTL FIB_FLS_SET\n");
@@ -239,7 +271,7 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 		case FIB_FLS_DEALLOC:
 			printk(KERN_INFO "DEBUG IOCTL FIB_FLS_DEALLOC\n");
 			flsFree(arg);
-		break;
+			break;
 
 		case FIB_CONVERT:
 			printk(KERN_INFO "DEBUG IOCTL FIB_CONVERT\n");
@@ -252,14 +284,14 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			printk(KERN_INFO "DEBUG IOCTL FIB_CREATE\n");
 			//Allocazione e popolamento strtuttra Fiber
 			//Inserimento oggetto in gestore
-			fib_create();
+			fib_create((void*)arg);
 			break;
 		case FIB_SWITCH_TO:
 			printk(KERN_INFO "DEBUG IOCTL FIB_SWITCH_TO\n");
 			//Controllo se il fiber è running
 			//Cambiamento di stato macchina
-			fib_switch_to();
-		break;
+			fib_switch_to(arg);
+			break;
 	}
 	return 0;
 }
@@ -268,27 +300,60 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 static void fib_convert(){
 	int num = 0;
 	struct Fiber_Processi* tmp = Lista_Processi;
-	struct Fiber_Processi* tmpNum = Lista_Processi;
+	
 	while (tmp != NULL && tmp->id != current->pid){
 		tmp = tmp->next;
-		num = 0;
-	}
-	tmpNum = tmp;
-	while (tmpNum != NULL){
-		tmpNum = tmpNum->next;
 		num++;
 	}
+	
+	if (tmp != NULL){
+		return;
+	}
+	
+	
+	
 	printk(KERN_INFO "DEBUG PID %d\n",current->pid);
 	printk(KERN_INFO "DEBUG ELEMS %d\n",num);
 	printk(KERN_INFO "DEBUG STRUCT %pK\n",tmp);
 }
 
-static void fib_create(){
+static void fib_create(void* func){
 
 }
 
-static void fib_switch_to(){
-
+static void fib_switch_to(unsigned long id){
+	pid_t pid = current->pid;
+	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
+	struct Lista_Fiber* lista_fiber_iter;
+	struct Fiber* str_fiber;
+	
+	while (lista_processi_iter != NULL && lista_processi_iter->id != pid){
+		lista_processi_iter = lista_processi_iter->next;
+	}
+	
+	if (lista_processi_iter == NULL){
+		return;	//Problemi
+	}
+	
+	lista_fiber_iter = lista_processi_iter->lista_fiber;
+	while (lista_fiber_iter != NULL && lista_fiber_iter->id != id){
+		lista_fiber_iter = lista_fiber_iter->next;
+	}
+	
+	if (lista_fiber_iter == NULL || lista_fiber_iter->running){
+		return;	//Problemi
+	}
+	
+	str_fiber = lista_fiber_iter->fiber;
+	struct pt_regs* my_regs = task_pt_regs(current);
+	
+	//Salva i registri nel corrente
+	//FPU
+	
+	memcpy(my_regs,str_fiber->regs,sizeof(struct pt_regs));
+	//FPU
+	
+	return;
 }
 
 //FLS
@@ -345,15 +410,19 @@ static int __init fib_driver_init(void){
 	printk(KERN_INFO "Device Driver Insert...Done!!!\n");
 	
 	//Register Proc kprobe
-	kp_main.pre_handler = Pre_Handler_Main; 
-    kp_main.post_handler = Post_Handler_Main; 
-    kp_main.addr = (kprobe_opcode_t *)0xffffffff8ba7c960; 
-    register_kprobe(&kp_main);
+	kprobe_readdir_func = (kprobe_opcode_t*) kallsyms_lookup_name("proc_pident_instantiate");
+	kprobe_lookup_func = (kprobe_opcode_t*) kallsyms_lookup_name("proc_pident_readdir");
+	
+	kp_readdir.pre_handler = Pre_Handler_Readdir; 
+    kp_readdir.post_handler = Post_Handler_Readdir; 
+    kp_readdir.addr = kprobe_readdir_func; 
+    register_kprobe(&kp_readdir);
     
-    kp_aux.pre_handler = Pre_Handler_Aux; 
-    kp_aux.post_handler = Post_Handler_Aux; 
-    kp_aux.addr = (kprobe_opcode_t *)0xffffffff8ba7c960; 
-    
+    kp_lookup.pre_handler = Pre_Handler_Lookup; 
+    kp_lookup.post_handler = Post_Handler_Lookup; 
+    kp_lookup.addr = kprobe_lookup_func; 
+    register_kprobe(&kp_lookup);
+	
 	return 0;
 r_device:
 	class_destroy(dev_class);
@@ -365,7 +434,8 @@ r_class:
 void __exit fib_driver_exit(void){
 	printk(KERN_INFO "DEBUG EXIT\n");
 	//Unregister Proc kprobe
-	unregister_kprobe(&kp_main);
+	unregister_kprobe(&kp_readdir);
+	unregister_kprobe(&kp_lookup);
 	
 	//Destroy device
 	device_destroy(dev_class,dev);

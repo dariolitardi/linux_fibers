@@ -29,6 +29,7 @@ int main()
 		printf("Cannot open device file...\n");
 		return 0;
 	}
+	printf("PID: %d\n",getpid());
 
 	printf("Test fib_convert\n");
 	ioctl(fd, FIB_CONVERT, (int32_t*) 0); 
