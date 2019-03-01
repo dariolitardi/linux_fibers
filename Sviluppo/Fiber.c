@@ -123,7 +123,7 @@ void Make_new_tgid_base_stuff(struct pt_regs *regs){
 		tmp = tmp->next;
 	}
 	*/
-	
+
 	//Crea nuova cartella
 	struct pid_entry* tgid_base_stuff = (struct pid_entry*)regs->dx;
 //	if (tmp){
@@ -163,7 +163,6 @@ int Pre_Handler_Readdir(struct kprobe *p, struct pt_regs *regs){
 	printk(KERN_INFO "DEBUG KPROBE READDIR %p , %p\n",(void*)regs->cx,(void*)kallsyms_lookup_name("tgid_base_stuff"));
 
 	Make_new_tgid_base_stuff(regs);
-	
     return 0;
 } 
 
@@ -356,7 +355,7 @@ static void fib_convert(){
 	}
 	
 	//Crea nuovo fiber
-	lista_fiber_elem = fib_create((void*)NULL);
+	lista_fiber_elem = fib_create((void*)0);
 	
 	//Manipolazione stato macchina
 //	struct pt_regs* my_regs = task_pt_regs(current);
@@ -527,6 +526,7 @@ static int fib_driver_init(void){
 	printk(KERN_INFO "Device Driver Insert...Done!!!\n");
 	
 	//Register Proc kprobe
+	/*
 	kprobe_readdir_func = (kprobe_opcode_t*) kallsyms_lookup_name("proc_pident_instantiate");
 	kprobe_lookup_func = (kprobe_opcode_t*) kallsyms_lookup_name("proc_pident_readdir");
 	
@@ -539,7 +539,7 @@ static int fib_driver_init(void){
     kp_lookup.post_handler = Post_Handler_Lookup; 
     kp_lookup.addr = kprobe_lookup_func; 
     register_kprobe(&kp_lookup);
-	
+	*/
 	return 0;
 r_device:
 	class_destroy(dev_class);
@@ -551,8 +551,8 @@ r_class:
 void fib_driver_exit(void){
 	printk(KERN_INFO "DEBUG EXIT\n");
 	//Unregister Proc kprobe
-	unregister_kprobe(&kp_readdir);
-	unregister_kprobe(&kp_lookup);
+	//unregister_kprobe(&kp_readdir);
+	//unregister_kprobe(&kp_lookup);
 	
 	//Destroy device
 	device_destroy(dev_class,dev);
