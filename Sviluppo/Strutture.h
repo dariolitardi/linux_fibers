@@ -9,8 +9,9 @@ struct Fiber{
 
 //Lista di fiber locali al processo
 struct Lista_Fiber{
-	unsigned long id;
 	bool running;
+	unsigned long id;
+	pid_t runner;
 	struct Fiber* fiber;
 	struct Lista_Fiber* next;
 };
