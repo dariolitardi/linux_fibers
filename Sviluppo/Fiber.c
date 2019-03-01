@@ -341,7 +341,9 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			printk(KERN_INFO "DEBUG IOCTL FIB_CREATE\n");
 			//Allocazione e popolamento strtuttra Fiber
 			//Inserimento oggetto in gestore
-			fib_create((void*)arg);
+			void* ptr;
+			copy_from_user(&ptr ,&arg, sizeof(void*));
+			fib_create(ptr);
 			break;
 		case FIB_SWITCH_TO:
 			printk(KERN_INFO "DEBUG IOCTL FIB_SWITCH_TO\n");
