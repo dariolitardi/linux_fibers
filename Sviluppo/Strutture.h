@@ -3,7 +3,7 @@
 //Singola fiber
 struct Fiber{
 	struct pt_regs* regs;
-	// add FPU
+	struct fpu* fpu;
 	long* fls;
 };
 
