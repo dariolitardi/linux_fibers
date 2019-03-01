@@ -234,7 +234,9 @@ static int fib_release(struct inode *inode, struct file *file){
 			processo_precedente = bersaglio;
 			bersaglio = bersaglio->next;
 		}
+		
 		if (bersaglio == NULL){
+		printk(KERN_INFO "DEBUG RELEASE PROBLEMI\n");
 		//Porcaputtana.jpg
 		} else {
 		processo_precedente->next = bersaglio->next;
@@ -248,21 +250,23 @@ static int fib_release(struct inode *inode, struct file *file){
 		struct Lista_Fiber* Elem = TmpElem->next;
 		while (TmpElem != NULL){
 			//Deallocazione FLS
+			Elem = TmpElem->next;
+			
 			if (TmpElem->fiber != NULL){
 				struct Fiber* fib = TmpElem->fiber;
 				if (fib->fls != NULL){
 					flsFree(fib->fls);
 				}
 				//brucia la struttura interna
-			kfree(fib);
+				kfree(fib);
 			}
 
-		//Elimina struttura
-		kfree(TmpElem);
-		TmpElem = Elem;
-		Elem = Elem->next;
+			//Elimina struttura
+			kfree(TmpElem);
+			TmpElem = Elem;
 		}
 	}
+	
 	kfree(bersaglio);
 	return 0;
 }
@@ -354,8 +358,9 @@ static void fib_convert(){
 		return;	//Problemi
 	}
 	
+	//NULLPOINTER QUI SOTTO
 	//Crea nuovo fiber
-	lista_fiber_elem = fib_create((void*)0);
+	lista_fiber_elem = fib_create((void*)1234);
 	
 	//Manipolazione stato macchina
 //	struct pt_regs* my_regs = task_pt_regs(current);
@@ -367,7 +372,6 @@ static void fib_convert(){
 static struct Lista_Fiber* fib_create(void* func){
 	pid_t pid = current->tgid;
 	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
-	struct Lista_Fiber* lista_fiber_iter;
 	struct Lista_Fiber* lista_fiber_elem;
 	struct Fiber* str_fiber;
 	
@@ -378,6 +382,7 @@ static struct Lista_Fiber* fib_create(void* func){
 	}
 	
 	if (lista_processi_iter == NULL){
+		printk(KERN_INFO "DEBUG CREATE PROBLEMI\n");
 		return;	//Problemi
 	}
 	
@@ -397,14 +402,14 @@ static struct Lista_Fiber* fib_create(void* func){
 	memset(lista_fiber_elem,0,sizeof(struct Lista_Fiber));
 	
 	//Popola entry lista
-	lista_fiber_elem->id = 0;//TODO ID
+	lista_fiber_elem->id = pid;
 	lista_fiber_elem->fiber = str_fiber;
 	
 	//Collega entry in lista
 	lista_fiber_elem->next = lista_processi_iter->lista_fiber;
 	lista_processi_iter->lista_fiber = lista_fiber_elem;
 	
-	return lista_fiber_iter; //Controllo
+	return lista_fiber_elem; //Controllo
 }
 
 static void fib_switch_to(unsigned long id){
