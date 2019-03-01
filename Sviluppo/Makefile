@@ -10,6 +10,7 @@ all:
 clean:
 	make -C $(KDIR) M=$(shell pwd) clean
 	rm test_app
+	rm test_switch
 mount:
 	make $(shell insmod ./driver.ko)
 unmount:

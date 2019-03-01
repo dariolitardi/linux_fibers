@@ -46,12 +46,13 @@ int main()
 	ioctl(fd, FIB_CONVERT, (int32_t*) 0);
 	
 	printf("Test fib_create\n");
-	stmp1 = ioctl(fd, FIB_CREATE, stampa1);
+	//PASSA PARAM CON STRUCT
+	ioctl(fd, FIB_CREATE, &stampa1);
 	
 	printf("Test fib_create\n");
-	stmp2 = ioctl(fd, FIB_CREATE, stampa2);
+	ioctl(fd, FIB_CREATE, &stampa2);
 	
-	printf("Test fib_switch_to");
+	printf("Test fib_switch_to\n");
 	ioctl(fd, FIB_SWITCH_TO, stmp1);
 	
 	printf("Test Close\n");

@@ -338,6 +338,7 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			fib_convert();
 			break;
 		case FIB_CREATE:
+			//PASSA PARAMETRO CON STRUCT
 			printk(KERN_INFO "DEBUG IOCTL FIB_CREATE\n");
 			//Allocazione e popolamento strtuttra Fiber
 			//Inserimento oggetto in gestore
@@ -456,6 +457,7 @@ static void fib_switch_to(unsigned long id){
 	}
 	
 	if (lista_processi_iter == NULL){
+		printk(KERN_INFO "DEBUG SWITCH PROBLEMI1\n");
 		return;	//Problemi
 	}
 	
@@ -467,6 +469,7 @@ static void fib_switch_to(unsigned long id){
 	}
 	
 	if (lista_fiber_iter_old == NULL){
+		printk(KERN_INFO "DEBUG SWITCH PROBLEMI2\n");
 		return;	//Problemi
 	}
 	
@@ -480,6 +483,7 @@ static void fib_switch_to(unsigned long id){
 	}
 	
 	if (lista_fiber_iter_new == NULL || lista_fiber_iter_new->running){
+		printk(KERN_INFO "DEBUG SWITCH PROBLEMI3\n");
 		return;	//Problemi
 	}
 	
@@ -504,6 +508,7 @@ static void fib_switch_to(unsigned long id){
 	lista_fiber_iter_new->running = 1;
 	lista_fiber_iter_new->runner = tid;
 	
+	printk(KERN_INFO "DEBUG SWITCH OK\n");
 	return;
 }
 
