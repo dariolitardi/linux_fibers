@@ -9,20 +9,19 @@ struct Fiber{
 
 //Lista di fiber locali al processo
 struct Lista_Fiber{
-	bool running;
-	unsigned long id;
-	pid_t runner;
 	struct Fiber* fiber;
 	struct Lista_Fiber* next;
+	unsigned long id;
+	pid_t runner;
+	bool running;
 };
 
 //Lista di gestori
 struct Fiber_Processi{
-	pid_t id;
 	struct Lista_Fiber* lista_fiber;
 	struct Fiber_Processi* next;
+	pid_t id;
 };
-
 //Strutture kernel che non sono visibili
 union proc_op {
 	int (*proc_get_link)(struct dentry *, struct path *);

@@ -17,8 +17,15 @@
 #include <linux/kprobes.h>
 #include <asm/fpu/types.h>
 #include <asm/fpu/internal.h>
-
+#include <linux/slab.h>
 #include "Strutture.h"
+#include <linux/module.h>
+#include <linux/moduleparam.h>
+#include <linux/init.h>
+#include <linux/kernel.h>   
+#include <linux/proc_fs.h>
+#include <asm/uaccess.h>
+#define BUFSIZE  100
 
 //NOTA
 //TGID == PARENT TGID == PROCESS ID
@@ -69,148 +76,96 @@ static struct file_operations fops = {
 	.release        = fib_release,
 };
 
+
 //PID stuff with kprobe
 static unsigned int counter = 0;
-static kprobe_opcode_t* kprobe_readdir_func;//0xffffffff83c7c960;
-static kprobe_opcode_t* kprobe_lookup_func;
-//static struct pid_entry* tgid_base_stuff;//0xffffffff8422be80;
+
 static struct pid_entry* new_tgid_base_stuff;
-//tgid_base stuff at ffffffff8422be80
-//use cat /proc/kallsyms | grep tgid_base_stuff
 
-void Make_new_tgid_base_stuff(struct pt_regs *regs){
-	/*
-	//Controlla se il processo è rilevante
-	pid_t id = 0;
-	void* ptr = (void*) regs->di;
-	struct file* file = (struct file*) regs->di;
-	if (ptr == NULL){
-		printk(KERN_INFO "DEBUG FILE NULL PTR");
-	} else {
-		printk(KERN_INFO "DEBUG FILE PRESENT");
-		ptr = (void*)&(file->f_path);
-		if (ptr == NULL){
-			printk(KERN_INFO "DEBUG FILEPATH NULL PTR");
-		} else {
-			printk(KERN_INFO "DEBUG FILEPATH PRESENT");
-			ptr = (void*)&(file->f_path.dentry);
-			if (ptr == NULL){
-				printk(KERN_INFO "DEBUG DENTRY NULL PTR");
-			} else {
-				printk(KERN_INFO "DEBUG DENTRY PRESENT");
-				ptr =  (void*)&(file->f_path.dentry->d_name);
-				if (ptr == NULL){
-					printk(KERN_INFO "DEBUG DENTRYNAME NULL PTR");
-				} else {
-					printk(KERN_INFO "DEBUG DENTRYNAME PRESENT");
-					ptr = (void*)&(file->f_path.dentry->d_name.name);
-					if (ptr == NULL){
-						printk(KERN_INFO "DEBUG NAME NULL PTR");
-					} else {
-						printk(KERN_INFO "DEBUG NAME PRESENT");
-						printk(KERN_INFO "DEBUG NAME %p",&(file->f_path.dentry->d_name.name));
-						printk(KERN_INFO "DEBUG NAME %s",&(file->f_path.dentry->d_name.name));
-					}
-				}
-			}
-		}
-	}
-	
-	//Cerca processo
-    struct Fiber_Processi* tmp = Lista_Processi;
-    while (tmp != NULL){
-		if (tmp->id == id){
-			break;
-		}
-		tmp = tmp->next;
-	}
-	*/
-
-	//Crea nuova cartella
-	struct pid_entry* tgid_base_stuff = (struct pid_entry*)regs->dx;
-//	if (tmp){
-		printk(KERN_INFO "DEBUG MAKE NEW 1");
-		printk(KERN_INFO "SOSTITUZIONE ARRAY");
-		
-		if (new_tgid_base_stuff != NULL){
-			kfree(new_tgid_base_stuff);
-		}
-		
-		new_tgid_base_stuff = (struct pid_entry*) kmalloc(sizeof(tgid_base_stuff)+sizeof(struct pid_entry),GFP_KERNEL);
-		memset(new_tgid_base_stuff,0,sizeof(new_tgid_base_stuff));
-		memcpy(new_tgid_base_stuff,tgid_base_stuff,sizeof(tgid_base_stuff));
-		
-		struct pid_entry* fibers_entry = (struct pid_entry*) kmalloc(sizeof(struct pid_entry),GFP_KERNEL);
-		memset(fibers_entry,0,sizeof(fibers_entry));
-		
-		printk(KERN_INFO "DEBUG MAKE NEW 2");
-		int i;
-		for (i=0;i<sizeof(tgid_base_stuff)/sizeof(struct pid_entry);i++){
-			if (strcmp((tgid_base_stuff)[i].name,"attr")==0){
-				memcpy(fibers_entry,(tgid_base_stuff+i),sizeof(struct pid_entry));
-			}
-		}
-		
-		//fibers_entry->name = "Fibers";
-		//fibers_entry->len = 6;
-		
-		/*
-		struct pid_entry* fibers_entry = (struct pid_entry*) kmalloc(sizeof(struct pid_entry),GFP_KERNEL);
-		fibers_entry->name = "Fibers";
-		fibers_entry->len = 6;
-		fibers_entry->mode = S_IFDIR|S_IRUGO|S_IXUGO;
-		
-		printk(KERN_INFO "DEBUG MAKE NEW 2");
-		int i;
-		for (i=0;i<sizeof(tgid_base_stuff)/sizeof(struct pid_entry);i++){
-			if (strcmp((tgid_base_stuff)[i].name,"attr")==0){
-				fibers_entry->iop = (tgid_base_stuff)[i].iop;//Questo coso serve a copiare i fop/iop dalla cartella attr
-				fibers_entry->fop = (tgid_base_stuff)[i].fop;
-			}
-		}
-//		fibers_entry->op = (union proc_op) NULL;
-		*/
-
-		printk(KERN_INFO "DEBUG MAKE NEW 3");
-		memcpy(new_tgid_base_stuff+(sizeof(tgid_base_stuff)/sizeof(struct pid_entry)),fibers_entry,sizeof(struct pid_entry));
-		
-		kfree(fibers_entry);
-		
-		//regs->dx = new_tgid_base_stuff;
-//	}
-}
 
 int Pre_Handler_Readdir(struct kprobe *p, struct pt_regs *regs){ 
-    printk(KERN_INFO "DEBUG KPROBE READDIR PID %d\n",((struct task_struct*)regs->dx)->tgid);
-	printk(KERN_INFO "DEBUG KPROBE READDIR %p , %p\n",(void*)regs->cx,(void*)kallsyms_lookup_name("tgid_base_stuff"));
+    
+	int i; 
+	int size;
+	struct pid_entry *tgid_base_stuff = regs->dx;
+	struct file *file=(void *) regs->di;
+	struct inode *inode;
+	printk(KERN_INFO "DEBUG PREREADIR 1\n");
 
-	Make_new_tgid_base_stuff(regs);
-    return 0;
+	int n= (unsigned int) regs->cx;
+	struct pid_entry fibers_entry;
+	fibers_entry.name="fibers";
+	fibers_entry.len=6;
+	fibers_entry.mode=S_IFDIR|S_IRUGO|S_IXUGO;
+	size=sizeof(fibers_entry)*(n+1);
+	new_tgid_base_stuff =  kzalloc(size,GFP_KERNEL);
+	
+	for (i=0; i<n; i++){
+		if (strcmp(tgid_base_stuff[i].name,"attr")==0){
+			fibers_entry.iop = tgid_base_stuff[i].iop;//Questo coso serve a copiare i fop/iop dalla cartella attr
+			fibers_entry.fop = tgid_base_stuff[i].fop;
+
+		}
+		new_tgid_base_stuff[i]=tgid_base_stuff[i];
+	}
+	new_tgid_base_stuff[i]=fibers_entry;
+	
+	
+	
+	regs->dx=(unsigned long) new_tgid_base_stuff;
+	regs->cx=(unsigned long) n+1;
+	inode=file->f_inode;
+	inc_nlink(inode);
+	return 0;
 } 
 
+
 void Post_Handler_Readdir(struct kprobe *p, struct pt_regs *regs, unsigned long flags){ 
-    if (new_tgid_base_stuff){
-		kfree(new_tgid_base_stuff);
-		new_tgid_base_stuff = NULL;
+	struct file *file;
+	struct inode *inode;
+	if((unsigned long) new_tgid_base_stuff == regs->dx){
+		file = (void *) regs->di;
+		inode=file->f_inode;
+		drop_nlink(inode);
 	}
+		
 }
 
 int Pre_Handler_Lookup(struct kprobe *p, struct pt_regs *regs){
-    printk(KERN_INFO "DEBUG KPROBE LOOKUP PID %d\n",((struct task_struct*)regs->dx)->tgid);
-	printk(KERN_INFO "DEBUG KPROBE LOOKUP %p , %p\n",(void*)regs->cx,(void*)kallsyms_lookup_name("tgid_base_stuff"));
+      
+	int i; 
+	int size;
+	struct pid_entry *tgid_base_stuff = regs->dx;
 
-	//struct pid_entry* tgt = regs->di;
-	//regs->di = new_tgid_base_stuff;
+	printk(KERN_INFO "DEBUG PREREADIR 1\n");
 
-	Make_new_tgid_base_stuff(regs);
+	int n= (unsigned int) regs->cx;
+	struct pid_entry fibers_entry;
+	fibers_entry.name="fibers";
+	fibers_entry.len=6;
+	fibers_entry.mode=S_IFDIR|S_IRUGO|S_IXUGO;
+	size=sizeof(fibers_entry)*(n+1);
+	new_tgid_base_stuff =  kzalloc(size,GFP_KERNEL);
+	
+	for (i=0; i<n; i++){
+		if (strcmp(tgid_base_stuff[i].name,"attr")==0){
+			fibers_entry.iop = tgid_base_stuff[i].iop;//Questo coso serve a copiare i fop/iop dalla cartella attr
+			fibers_entry.fop = tgid_base_stuff[i].fop;
+
+		}
+		new_tgid_base_stuff[i]=tgid_base_stuff[i];
+	}
+	new_tgid_base_stuff[i]=fibers_entry;
+	
+	
+	regs->dx=(unsigned long) new_tgid_base_stuff;
+	regs->cx=(unsigned long) n+1;
+
 	return 0;
 }
 
 void Post_Handler_Lookup(struct kprobe *p, struct pt_regs *regs, unsigned long flags){
-	if (new_tgid_base_stuff){
-		kfree(new_tgid_base_stuff);
-		new_tgid_base_stuff = NULL;
-	}
+
 }
 
 static struct kprobe kp_readdir;
@@ -566,17 +521,15 @@ static int fib_driver_init(void){
 	printk(KERN_INFO "Device Driver Insert...Done!!!\n");
 	
 	//Register Proc kprobe
-	kprobe_readdir_func = (kprobe_opcode_t*) kallsyms_lookup_name("proc_pident_instantiate");
-	kprobe_lookup_func = (kprobe_opcode_t*) kallsyms_lookup_name("proc_pident_readdir");
 	
 	kp_readdir.pre_handler = Pre_Handler_Readdir; 
     kp_readdir.post_handler = Post_Handler_Readdir; 
-    kp_readdir.addr = kprobe_readdir_func; 
+    kp_readdir.symbol_name = "proc_pident_readdir";
     register_kprobe(&kp_readdir);
 
     kp_lookup.pre_handler = Pre_Handler_Lookup; 
     kp_lookup.post_handler = Post_Handler_Lookup; 
-    kp_lookup.addr = kprobe_lookup_func; 
+    kp_lookup.symbol_name = "proc_pident_lookup"; 
     register_kprobe(&kp_lookup);
 
 	return 0;

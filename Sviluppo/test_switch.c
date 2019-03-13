@@ -22,12 +22,27 @@ int fd;
 unsigned long stmp1;
 unsigned long stmp2;
 
-void stampa1(){
+typedef void(*user_function_t)(void* param);
+
+struct fiber_arguments {
+        //this struct is used in order to pass arguments to the IOCTL call
+        //packing all we need in a void*
+        void *stack_pointer;
+        unsigned long stack_size;
+        user_function_t start_function_address;
+        void *start_function_arguments;
+        pid_t fiber_id;
+        long index;
+        unsigned long buffer;
+        unsigned long alloc_size;
+};
+
+void stampa1(void* parameters){
 	printf("STAMPA1");
 	ioctl(fd, FIB_SWITCH_TO, stmp2);
 }
 
-void stampa2(){
+void stampa2(void* parameters){
 	printf("STAMPA2");
 	ioctl(fd, FIB_SWITCH_TO, stmp1);
 }
@@ -47,10 +62,18 @@ int main()
 	
 	printf("Test fib_create\n");
 	//PASSA PARAM CON STRUCT
-	ioctl(fd, FIB_CREATE, &stampa1);
+ 	struct fiber_arguments fa1;
+
+    	fa1.start_function_address = stampa1;
+ 	
+	struct fiber_arguments fa2;
+
+    	fa2.start_function_address = stampa2;
+ 	
+	ioctl(fd, FIB_CREATE, &fa1);
 	
 	printf("Test fib_create\n");
-	ioctl(fd, FIB_CREATE, &stampa2);
+	ioctl(fd, FIB_CREATE, &fa2);
 	
 	printf("Test fib_switch_to\n");
 	ioctl(fd, FIB_SWITCH_TO, stmp1);
