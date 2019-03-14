@@ -29,9 +29,9 @@ struct fiber_arguments {
         //packing all we need in a void*
         void *stack_pointer;
         unsigned long stack_size;
-        user_function_t start_function_address;
+        void* start_function_address;
         void *start_function_arguments;
-        pid_t fiber_id;
+        unsigned long fiber_id;
         long index;
         unsigned long buffer;
         unsigned long alloc_size;
@@ -39,12 +39,12 @@ struct fiber_arguments {
 
 void stampa1(void* parameters){
 	printf("STAMPA1");
-	ioctl(fd, FIB_SWITCH_TO, stmp2);
+	//ioctl(fd, FIB_SWITCH_TO, stmp2);
 }
 
 void stampa2(void* parameters){
 	printf("STAMPA2");
-	ioctl(fd, FIB_SWITCH_TO, stmp1);
+	//ioctl(fd, FIB_SWITCH_TO, stmp1);
 }
  
 int main()
@@ -59,22 +59,35 @@ int main()
 
 	printf("Test fib_convert\n");
 	ioctl(fd, FIB_CONVERT, (int32_t*) 0);
-	
+	printf("Test main %p\n",main);
+
 	printf("Test fib_create\n");
+	
 	//PASSA PARAM CON STRUCT
  	struct fiber_arguments fa1;
-
-    	fa1.start_function_address = stampa1;
- 	
+    fa1.start_function_address = stampa1;
+	fa1.stack_pointer= malloc(1024);;
+	fa1.stack_size=1;
 	struct fiber_arguments fa2;
+    fa2.start_function_address = stampa2;
+    fa2.stack_pointer= malloc(1024);
+	fa2.stack_size=1;
 
-    	fa2.start_function_address = stampa2;
- 	
+ 	printf("Test fib_create 1\n");
 	ioctl(fd, FIB_CREATE, &fa1);
+	printf("Test fib_create1 id %ul\n", fa1.fiber_id);
 	
-	printf("Test fib_create\n");
+	printf("Test fib_create 2\n");
 	ioctl(fd, FIB_CREATE, &fa2);
-	
+	printf("Test fib_create2 id %ul\n", fa2.fiber_id);
+
+	stmp1 = fa1.fiber_id;	
+	stmp2 = fa2.fiber_id;
+	printf("Test stmp1 %p\n", fa1.start_function_address);
+	printf("Test stmp2 %p\n", fa2.start_function_address);
+	printf("Test stampa1 %p\n", stampa1);
+	printf("Test stampa2 %p\n", stampa2);
+
 	printf("Test fib_switch_to\n");
 	ioctl(fd, FIB_SWITCH_TO, stmp1);
 	

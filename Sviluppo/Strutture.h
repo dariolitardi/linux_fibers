@@ -2,10 +2,11 @@
 
 //Singola fiber
 struct Fiber{
-	struct pt_regs* regs;
-	struct fpu* fpu;
+	struct pt_regs regs;
+	struct fpu fpu;
 	long* fls;
 };
+
 
 //Lista di fiber locali al processo
 struct Lista_Fiber{
@@ -37,4 +38,17 @@ struct pid_entry {
 	const struct inode_operations *iop;
 	const struct file_operations *fop;
 	union proc_op op;
+};
+
+struct fiber_arguments {
+        //this struct is used in order to pass arguments to the IOCTL call
+        //packing all we need in a void*
+        void *stack_pointer;
+        unsigned long stack_size;
+        void *start_function_address;
+        void *start_function_arguments;
+        unsigned long fiber_id;
+        long index;
+        unsigned long buffer;
+        unsigned long alloc_size;
 };

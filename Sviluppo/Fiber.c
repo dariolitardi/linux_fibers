@@ -59,7 +59,7 @@ static ssize_t fib_write(struct file *filp, const char *buf, size_t len, loff_t 
 static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 
 static void fib_convert(void);
-static struct Lista_Fiber* fib_create(void* func);
+static struct Lista_Fiber* fib_create(void* func, void *stack_pointer, unsigned long stack_size);
 static void fib_switch_to(unsigned long id);
 
 static unsigned long flsAlloc(void);
@@ -233,9 +233,12 @@ static int fib_release(struct inode *inode, struct file *file){
 				if (fib->fls != NULL){
 					flsFree(fib->fls);
 				}
-				if (fib->fpu != NULL){
-					kfree(fib->fpu);
+				/*if (&fib->fpu != NULL){
+					kfree(&fib->fpu);
 				}
+				if (&fib->regs != NULL){
+					kfree(&fib->regs);
+				}*/
 				//brucia la struttura interna
 				kfree(fib);
 			}
@@ -297,14 +300,18 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			printk(KERN_INFO "DEBUG IOCTL FIB_CREATE\n");
 			//Allocazione e popolamento strtuttra Fiber
 			//Inserimento oggetto in gestore
-			void* ptr;
-			copy_from_user(&ptr ,&arg, sizeof(void*));
-			fib_create(ptr);
+			struct fiber_arguments fa;
+			copy_from_user(&fa ,(void*)arg, sizeof(struct fiber_arguments));
+			printk(KERN_INFO "DEBUG IOCTL FIB_CREATE ARG %p\n", fa.start_function_address);
+
+			fa.fiber_id=fib_create(fa.start_function_address,fa.stack_pointer,fa.stack_size)->id;
+			copy_to_user(arg,&fa,sizeof(struct fiber_arguments));
 			break;
 		case FIB_SWITCH_TO:
 			printk(KERN_INFO "DEBUG IOCTL FIB_SWITCH_TO\n");
 			//Controllo se il fiber è running
 			//Cambiamento di stato macchina
+
 			fib_switch_to(arg);
 			break;
 	}
@@ -342,21 +349,26 @@ static void fib_convert(){
 	
 	//NULLPOINTER QUI SOTTO
 	//Crea nuovo fiber
-	lista_fiber_elem = fib_create((void*)1234);
+	// void * stack_pointer= kmalloc(4096*2*sizeof(char));
+	int stack_size=1;
+	lista_fiber_elem = fib_create((void*)1234,1,0);
 	
 	//Manipolazione stato macchina
-//	struct pt_regs* my_regs = task_pt_regs(current);
-	
+	struct pt_regs* my_regs = task_pt_regs(current);
+	printk(KERN_INFO "DEBUG CONVERT IP %p\n",my_regs->ip);
+
 	lista_fiber_elem->running = 1;
 	lista_fiber_elem->runner = tid;
 }
 
-static struct Lista_Fiber* fib_create(void* func){
+static struct Lista_Fiber* fib_create(void* func, void *stack_pointer, unsigned long stack_size){
 	pid_t pid = current->tgid;
+	unsigned long fiber_id=1;
 	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
 	struct Lista_Fiber* lista_fiber_elem;
+	struct Lista_Fiber* lista_fiber_iter;
 	struct Fiber* str_fiber;
-	
+
 	//Itera sulla lista processi
 	//Cerca processo corrente
 	while (lista_processi_iter != NULL && lista_processi_iter->id != pid){
@@ -369,24 +381,32 @@ static struct Lista_Fiber* fib_create(void* func){
 	}
 	
 	//Crea Fiber str
-	str_fiber = (struct Fiber*) kmalloc(sizeof(struct Fiber),GFP_KERNEL);
+	str_fiber =kmalloc(sizeof(struct Fiber),GFP_KERNEL);
 	memset(str_fiber,0,sizeof(struct Fiber));
-	
+	memcpy(&str_fiber->regs, task_pt_regs(current), sizeof(struct pt_regs)); 
 	//Crea ptregs str
-	str_fiber->regs = (struct pt_regs*) kmalloc(sizeof(struct pt_regs),GFP_KERNEL);
-	memset(str_fiber->regs,0,sizeof(struct pt_regs));
-	str_fiber->regs->ip = func;	//Assegna instruction pointer alla funzione passata
-	
+	//str_fiber->regs->ir = 0x90; //Assegna all'istruction reg Nop opcode
+	str_fiber->regs.ip = (long)func;	//Assegna instruction pointer alla funzione passata
+	str_fiber->regs.sp=(long)(stack_pointer +stack_size-1);
+	str_fiber->regs.bp=str_fiber->regs.sp;
+
+	printk(KERN_INFO "DEBUG CREATE FUNC %p\n", func);
+
 	//FPU
-	str_fiber->fpu = (struct fpu*) kmalloc(sizeof(struct fpu),GFP_KERNEL);
-	memset(str_fiber->fpu,0,sizeof(struct fpu));
+	
+	//memset(&str_fiber->fpu,0,sizeof(struct fpu));
 	
 	//Crea Fiber elem in list
 	lista_fiber_elem = (struct Lista_Fiber*) kmalloc(sizeof(struct Lista_Fiber),GFP_KERNEL);
 	memset(lista_fiber_elem,0,sizeof(struct Lista_Fiber));
 	
+	//Assegna fiber id
+	if(lista_processi_iter->lista_fiber!=NULL){
+		fiber_id=lista_processi_iter->lista_fiber->id+1;
+	}
+	
 	//Popola entry lista
-	lista_fiber_elem->id = pid;
+	lista_fiber_elem->id = fiber_id;
 	lista_fiber_elem->fiber = str_fiber;
 	
 	//Collega entry in lista
@@ -445,17 +465,21 @@ static void fib_switch_to(unsigned long id){
 	str_fiber_new = lista_fiber_iter_new->fiber;
 	
 	//Manipolazione stato macchina
-	struct pt_regs* my_regs = task_pt_regs(current);
-	
+	struct pt_regs* my_regs= task_pt_regs(current);
+
+
+	printk(KERN_INFO "DEBUG SWITCH IP 1 %p\n",my_regs->ip);
+
 	//Salvataggio registri nel vecchio fiber
-	memcpy(my_regs,str_fiber_old->regs,sizeof(struct pt_regs));
+	memcpy(&str_fiber_old->regs,my_regs,sizeof(struct pt_regs));
 	//FPU
-	copy_fxregs_to_kernel(str_fiber_old->fpu);
+	//copy_fxregs_to_kernel(&(str_fiber_old->fpu));
 	
 	//Ripristino registri dal nuovo fiber
-	memcpy(str_fiber_new->regs,my_regs,sizeof(struct pt_regs));
+	memcpy(my_regs,&str_fiber_new->regs,sizeof(struct pt_regs));
 	//FPU
-	copy_kernel_to_fxregs(&(str_fiber_new->fpu->state.fxsave));
+	//copy_kernel_to_fxregs(&(str_fiber_new->fpu.state.fxsave));
+	printk(KERN_INFO "DEBUG SWITCH IP 2 %p\n",my_regs->ip);
 	
 	//Manipolazione sistema interno
 	lista_fiber_iter_old->running = 0;
