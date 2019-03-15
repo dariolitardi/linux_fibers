@@ -38,13 +38,31 @@ struct fiber_arguments {
 };
 
 void stampa1(void* parameters){
-	printf("STAMPA1");
-	//ioctl(fd, FIB_SWITCH_TO, stmp2);
+	printf("STAMPA1\n");
+	ioctl(fd, FIB_SWITCH_TO, stmp2);
+	printf("STAMPA1\n");
+	ioctl(fd, FIB_SWITCH_TO, stmp2);
+	printf("STAMPA1\n");
+	ioctl(fd, FIB_SWITCH_TO, stmp2);
+	printf("STAMPA1\n");
+	ioctl(fd, FIB_SWITCH_TO, stmp2);
+	printf("STAMPA1\n");
+	ioctl(fd, FIB_SWITCH_TO, stmp2);
+	exit(0);
 }
 
 void stampa2(void* parameters){
-	printf("STAMPA2");
-	//ioctl(fd, FIB_SWITCH_TO, stmp1);
+	printf("STAMPA2\n");
+	ioctl(fd, FIB_SWITCH_TO, stmp1);
+	printf("STAMPA2\n");
+	ioctl(fd, FIB_SWITCH_TO, stmp1);
+	printf("STAMPA2\n");
+	ioctl(fd, FIB_SWITCH_TO, stmp1);
+	printf("STAMPA2\n");
+	ioctl(fd, FIB_SWITCH_TO, stmp1);
+	printf("STAMPA2\n");
+	ioctl(fd, FIB_SWITCH_TO, stmp1);
+	exit(0);
 }
  
 int main()
@@ -66,12 +84,12 @@ int main()
 	//PASSA PARAM CON STRUCT
  	struct fiber_arguments fa1;
     fa1.start_function_address = stampa1;
-	fa1.stack_pointer= malloc(1024);;
-	fa1.stack_size=1024;
+	fa1.stack_pointer= malloc(4096*sizeof(char));
+	fa1.stack_size=4096*sizeof(char);
 	struct fiber_arguments fa2;
     fa2.start_function_address = stampa2;
-    fa2.stack_pointer= malloc(1024);
-	fa2.stack_size=1024;
+    fa2.stack_pointer= malloc(4096*sizeof(char));
+	fa2.stack_size=4096*sizeof(char);
 
  	printf("Test fib_create 1\n");
 	ioctl(fd, FIB_CREATE, &fa1);
