@@ -38,30 +38,20 @@ struct fiber_arguments {
 };
 
 void stampa1(void* parameters){
-	printf("STAMPA1\n");
-	ioctl(fd, FIB_SWITCH_TO, stmp2);
-	printf("STAMPA1\n");
-	ioctl(fd, FIB_SWITCH_TO, stmp2);
-	printf("STAMPA1\n");
-	ioctl(fd, FIB_SWITCH_TO, stmp2);
-	printf("STAMPA1\n");
-	ioctl(fd, FIB_SWITCH_TO, stmp2);
-	printf("STAMPA1\n");
-	ioctl(fd, FIB_SWITCH_TO, stmp2);
+	int i;
+	for(i=0;i<1000;++i){
+		printf("STAMPA1-%d\n",i);
+		ioctl(fd, FIB_SWITCH_TO, stmp2);
+	}
 	exit(0);
 }
 
 void stampa2(void* parameters){
-	printf("STAMPA2\n");
-	ioctl(fd, FIB_SWITCH_TO, stmp1);
-	printf("STAMPA2\n");
-	ioctl(fd, FIB_SWITCH_TO, stmp1);
-	printf("STAMPA2\n");
-	ioctl(fd, FIB_SWITCH_TO, stmp1);
-	printf("STAMPA2\n");
-	ioctl(fd, FIB_SWITCH_TO, stmp1);
-	printf("STAMPA2\n");
-	ioctl(fd, FIB_SWITCH_TO, stmp1);
+	int i;
+	for(i=0;i<1000;++i){
+		printf("STAMPA2-%d\n",i);
+		ioctl(fd, FIB_SWITCH_TO, stmp1);
+	}
 	exit(0);
 }
  

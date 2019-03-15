@@ -183,8 +183,8 @@ int Pre_Handler_Exit(struct kprobe *p, struct pt_regs *regs){
 	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
 	struct Lista_Fiber* lista_fiber_iter_old;
 	struct Fiber* str_fiber_old;
-	long ret;
-	
+	printk(KERN_INFO "DEBUG EXIT \n");
+
 	//Itera sulla lista processi
 	//Cerca processo corrente
 	while (lista_processi_iter != NULL && lista_processi_iter->id != pid){
@@ -192,8 +192,8 @@ int Pre_Handler_Exit(struct kprobe *p, struct pt_regs *regs){
 	}
 	
 	if (lista_processi_iter == NULL){
-		printk(KERN_INFO "DEBUG EXIT PROBLEMI1\n");
-		return;	//Problemi
+		printk(KERN_INFO "DEBUG EXIT NO LISTA\n");
+		return 0;	//No lista
 	}
 	
 	//Itera sulla lista fiber
@@ -204,8 +204,8 @@ int Pre_Handler_Exit(struct kprobe *p, struct pt_regs *regs){
 	}
 	
 	if (lista_fiber_iter_old == NULL){
-		printk(KERN_INFO "DEBUG EXIT PROBLEMI2\n");
-		return;	//Problemi
+		printk(KERN_INFO "DEBUG EXIT PROBLEMI\n");
+		return 0;	//Problemi
 	}
 	
 	str_fiber_old = lista_fiber_iter_old->fiber;
@@ -225,7 +225,8 @@ int Pre_Handler_Exit(struct kprobe *p, struct pt_regs *regs){
 
 	//my_regs->sp=current->stack;
 	//my_regs->bp=current->stack;
-
+	
+	return 0;
 }
 
 static struct kprobe kp_readdir;
@@ -521,19 +522,23 @@ static void fib_switch_to(unsigned long id){
 	
 	//Manipolazione stato macchina
 	struct pt_regs* my_regs= task_pt_regs(current);
+	
 
 
 	printk(KERN_INFO "DEBUG SWITCH IP 1 %p\n",my_regs->ip);
 
 	//Salvataggio registri nel vecchio fiber
 	memcpy(&str_fiber_old->regs,my_regs,sizeof(struct pt_regs));
+
 	//FPU
 	copy_fxregs_to_kernel(&(str_fiber_old->fpu));
 	
 	//Ripristino registri dal nuovo fiber
 	memcpy(my_regs,&str_fiber_new->regs,sizeof(struct pt_regs));
+
 	//FPU
 	copy_kernel_to_fxregs(&(str_fiber_new->fpu.state.fxsave));
+
 	printk(KERN_INFO "DEBUG SWITCH IP 2 %p\n",my_regs->ip);
 	
 	//Manipolazione sistema interno
@@ -609,11 +614,10 @@ static int fib_driver_init(void){
     kp_lookup.post_handler = Post_Handler_Lookup; 
     kp_lookup.symbol_name = "proc_pident_lookup"; 
     register_kprobe(&kp_lookup);
-    /*
+    
     kp_exit.pre_handler = Pre_Handler_Exit; 
-    kp_exit.post_handler = Post_Handler_Lookup; 
     kp_exit.symbol_name = "do_exit";
-    register_kprobe(&kp_exit);*/
+    register_kprobe(&kp_exit);
 
 	return 0;
 r_device:
@@ -628,7 +632,7 @@ void fib_driver_exit(void){
 	//Unregister kprobe
 	unregister_kprobe(&kp_readdir);
 	unregister_kprobe(&kp_lookup);
-	//unregister_kprobe(&kp_exit);
+	unregister_kprobe(&kp_exit);
 
 	//Destroy device
 	device_destroy(dev_class,dev);
