@@ -387,14 +387,14 @@ static struct Lista_Fiber* fib_create(void* func, void *stack_pointer, unsigned 
 	//Crea ptregs str
 	//str_fiber->regs->ir = 0x90; //Assegna all'istruction reg Nop opcode
 	str_fiber->regs.ip = (long)func;	//Assegna instruction pointer alla funzione passata
-	str_fiber->regs.sp=(long)(stack_pointer +stack_size-1);
-	str_fiber->regs.bp=str_fiber->regs.sp;
+	//str_fiber->regs.sp=(long)(stack_pointer +stack_size-1);
+	//str_fiber->regs.bp=str_fiber->regs.sp;
 
 	printk(KERN_INFO "DEBUG CREATE FUNC %p\n", func);
 
 	//FPU
 	
-	//memset(&str_fiber->fpu,0,sizeof(struct fpu));
+	memset(&str_fiber->fpu,0,sizeof(struct fpu));
 	
 	//Crea Fiber elem in list
 	lista_fiber_elem = (struct Lista_Fiber*) kmalloc(sizeof(struct Lista_Fiber),GFP_KERNEL);
@@ -473,12 +473,12 @@ static void fib_switch_to(unsigned long id){
 	//Salvataggio registri nel vecchio fiber
 	memcpy(&str_fiber_old->regs,my_regs,sizeof(struct pt_regs));
 	//FPU
-	//copy_fxregs_to_kernel(&(str_fiber_old->fpu));
+	copy_fxregs_to_kernel(&(str_fiber_old->fpu));
 	
 	//Ripristino registri dal nuovo fiber
 	memcpy(my_regs,&str_fiber_new->regs,sizeof(struct pt_regs));
 	//FPU
-	//copy_kernel_to_fxregs(&(str_fiber_new->fpu.state.fxsave));
+	copy_kernel_to_fxregs(&(str_fiber_new->fpu.state.fxsave));
 	printk(KERN_INFO "DEBUG SWITCH IP 2 %p\n",my_regs->ip);
 	
 	//Manipolazione sistema interno

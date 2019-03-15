@@ -67,11 +67,11 @@ int main()
  	struct fiber_arguments fa1;
     fa1.start_function_address = stampa1;
 	fa1.stack_pointer= malloc(1024);;
-	fa1.stack_size=1;
+	fa1.stack_size=1024;
 	struct fiber_arguments fa2;
     fa2.start_function_address = stampa2;
     fa2.stack_pointer= malloc(1024);
-	fa2.stack_size=1;
+	fa2.stack_size=1024;
 
  	printf("Test fib_create 1\n");
 	ioctl(fd, FIB_CREATE, &fa1);
