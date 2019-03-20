@@ -15,6 +15,7 @@ struct Lista_Fiber{
 	unsigned long id;
 	pid_t runner;
 	bool running;
+
 };
 
 //Lista di gestori
@@ -22,6 +23,10 @@ struct Fiber_Processi{
 	struct Lista_Fiber* lista_fiber;
 	struct Fiber_Processi* next;
 	pid_t id;
+	spinlock_t lock_fib_list;
+	unsigned long flags;
+
+
 };
 //Strutture kernel che non sono visibili
 union proc_op {

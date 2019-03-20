@@ -34,6 +34,7 @@
 #include <linux/stat.h>
 #include <linux/fs.h>
 #include <linux/kallsyms.h>
+#include <linux/spinlock.h>
 #define BUFSIZE  100
 
 //NOTA
@@ -54,6 +55,8 @@
 #define FIB_SWITCH_TO	7
 
 struct Fiber_Processi* Lista_Processi;
+spinlock_t lock_lista_processi;
+unsigned long flags;
 
 dev_t dev = 0;
 static struct class *dev_class;
@@ -68,6 +71,7 @@ static ssize_t fib_write(struct file *filp, const char *buf, size_t len, loff_t 
 static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 
 static void fib_convert(void);
+static struct Lista_Fiber* do_fib_create(void* func, void *stack_pointer, unsigned long stack_size,struct Fiber_Processi* str_processo);
 static struct Lista_Fiber* fib_create(void* func, void *stack_pointer, unsigned long stack_size);
 static void fib_switch_to(unsigned long id);
 
@@ -187,17 +191,25 @@ int Pre_Handler_Exit(struct kprobe *p, struct pt_regs *regs){
 
 	//Itera sulla lista processi
 	//Cerca processo corrente
+
+	//spin_lock_irqsave(&(lock_lista_processi), flags);
 	while (lista_processi_iter != NULL && lista_processi_iter->id != pid){
 		lista_processi_iter = lista_processi_iter->next;
 	}
 	
 	if (lista_processi_iter == NULL){
 		printk(KERN_INFO "DEBUG EXIT NO LISTA\n");
+		//spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
 		return 0;	//No lista
+		
 	}
 	
 	//Itera sulla lista fiber
 	//Cerca vecchio fiber
+	//spin_lock_irqsave(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+	//spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
 	lista_fiber_iter_old = lista_processi_iter->lista_fiber;
 	while (lista_fiber_iter_old != NULL && lista_fiber_iter_old->runner != tid){
 		lista_fiber_iter_old = lista_fiber_iter_old->next;
@@ -205,6 +217,9 @@ int Pre_Handler_Exit(struct kprobe *p, struct pt_regs *regs){
 	
 	if (lista_fiber_iter_old == NULL){
 		printk(KERN_INFO "DEBUG EXIT PROBLEMI\n");
+		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+
+
 		return 0;	//Problemi
 	}
 	
@@ -225,7 +240,9 @@ int Pre_Handler_Exit(struct kprobe *p, struct pt_regs *regs){
 
 	//my_regs->sp=current->stack;
 	//my_regs->bp=current->stack;
-	
+	//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+
+
 	return 0;
 }
 
@@ -243,15 +260,19 @@ static int fib_open(struct inode *inode, struct file *file){
 	struct Fiber_Processi* processo = (struct Fiber_Processi*) kmalloc(sizeof(struct Fiber_Processi),GFP_KERNEL);
 	memset(processo,0,sizeof(struct Fiber_Processi));	// pulisce la lista dei processi (la nuova entry) per sicurezza perche potrebbe essere ancora in memoria
 	processo->id = current->tgid;	//Current è globale
+	processo->lock_fib_list=__SPIN_LOCK_UNLOCKED(processo->lock_fib_list); //Creazione lock
 
 	//Inserimento in lista
+	spin_lock_irqsave(&(lock_lista_processi), flags);
+
 	if (Lista_Processi == NULL) {Lista_Processi = processo;}
 	else {
 		struct Fiber_Processi* tmp = Lista_Processi;
 		Lista_Processi = processo;
 		processo->next = tmp;
 	}
-	
+	spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
 	return 0;
 }
 
@@ -261,6 +282,8 @@ static int fib_release(struct inode *inode, struct file *file){
 	pid_t pid = current->tgid;
 
 	//Rimozione da lista
+	spin_lock_irqsave(&(lock_lista_processi), flags);
+
 	struct Fiber_Processi* bersaglio;
 	if (Lista_Processi->id == pid){//Testa
 		bersaglio = Lista_Processi;
@@ -274,15 +297,16 @@ static int fib_release(struct inode *inode, struct file *file){
 		}
 		
 		if (bersaglio == NULL){
-		printk(KERN_INFO "DEBUG RELEASE PROBLEMI\n");
-		//Porcaputtana.jpg
+			printk(KERN_INFO "DEBUG RELEASE PROBLEMI\n");
 		} else {
-		processo_precedente->next = bersaglio->next;
+			processo_precedente->next = bersaglio->next;
 		}
 	}
 	
 	//Deallocazione profonda di bersaglio
 	//Deallocazione lista fiber
+	//spin_lock_irqsave(&(bersaglio->lock_fib_list), bersaglio->flags);
+
 	if (bersaglio->lista_fiber != NULL){
 		struct Lista_Fiber* TmpElem = bersaglio->lista_fiber;
 		struct Lista_Fiber* Elem = TmpElem->next;
@@ -305,8 +329,12 @@ static int fib_release(struct inode *inode, struct file *file){
 			TmpElem = Elem;
 		}
 	}
-	
+	//spin_unlock_irqrestore(&(bersaglio->lock_fib_list), bersaglio->flags);
+
 	kfree(bersaglio);
+	
+	spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
 	return 0;
 }
 
@@ -385,22 +413,32 @@ static void fib_convert(){
 	
 	//Itera sulla lista processi
 	//Cerca processo corrente
+	spin_lock_irqsave(&(lock_lista_processi), flags);
+
 	while (lista_processi_iter != NULL && lista_processi_iter->id != pid){
 		lista_processi_iter = lista_processi_iter->next;
 	}
 	
 	if (lista_processi_iter == NULL){
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
 		return;	//Problemi
 	}
 	
 	//Itera sulla lista fiber
 	//Controlla se sono già un fiber
+	//spin_lock_irqsave(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+	//spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
 	lista_fiber_iter = lista_processi_iter->lista_fiber;
 	while (lista_fiber_iter != NULL && lista_fiber_iter->runner != tid){
 		lista_fiber_iter = lista_fiber_iter->next;
 	}
 	
 	if (lista_fiber_iter){
+		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
 		return;	//Problemi
 	}
 	
@@ -408,7 +446,7 @@ static void fib_convert(){
 	//Crea nuovo fiber
 	// void * stack_pointer= kmalloc(4096*2*sizeof(char));
 	int stack_size=1;
-	lista_fiber_elem = fib_create((void*)1234,1,0);
+	lista_fiber_elem = do_fib_create((void*)1234,1,0,lista_processi_iter);
 	
 	//Manipolazione stato macchina
 	struct pt_regs* my_regs = task_pt_regs(current);
@@ -416,28 +454,27 @@ static void fib_convert(){
 
 	lista_fiber_elem->running = 1;
 	lista_fiber_elem->runner = tid;
+	
+	
+	//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+	spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
 }
 
-static struct Lista_Fiber* fib_create(void* func, void *stack_pointer, unsigned long stack_size){
+
+static struct Lista_Fiber* do_fib_create(void* func, void *stack_pointer, unsigned long stack_size,struct Fiber_Processi* str_processo){
 	pid_t pid = current->tgid;
 	unsigned long fiber_id=1;
-	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
 	struct Lista_Fiber* lista_fiber_elem;
 	struct Lista_Fiber* lista_fiber_iter;
 	struct Fiber* str_fiber;
 
-	//Itera sulla lista processi
-	//Cerca processo corrente
-	while (lista_processi_iter != NULL && lista_processi_iter->id != pid){
-		lista_processi_iter = lista_processi_iter->next;
-	}
 	
-	if (lista_processi_iter == NULL){
-		printk(KERN_INFO "DEBUG CREATE PROBLEMI\n");
-		return;	//Problemi
-	}
+	
 	
 	//Crea Fiber str
+	//spin_lock_irqsave(&(str_processo->lock_fib_list), str_processo->flags);
+
 	str_fiber =kmalloc(sizeof(struct Fiber),GFP_KERNEL);
 	memset(str_fiber,0,sizeof(struct Fiber));
 	memcpy(&str_fiber->regs, task_pt_regs(current), sizeof(struct pt_regs)); 
@@ -457,20 +494,57 @@ static struct Lista_Fiber* fib_create(void* func, void *stack_pointer, unsigned 
 	memset(lista_fiber_elem,0,sizeof(struct Lista_Fiber));
 	
 	//Assegna fiber id
-	if(lista_processi_iter->lista_fiber!=NULL){
-		fiber_id=lista_processi_iter->lista_fiber->id+1;
+	if(str_processo->lista_fiber!=NULL){
+		fiber_id=str_processo->lista_fiber->id+1;
 	}
 	
 	//Popola entry lista
 	lista_fiber_elem->id = fiber_id;
 	lista_fiber_elem->fiber = str_fiber;
-	
+	//lista_fiber_elem->lock_fib_list = __SPIN_LOCK_UNLOCKED(lista_fiber_elem->lock_fib_list); 
+
 	//Collega entry in lista
-	lista_fiber_elem->next = lista_processi_iter->lista_fiber;
-	lista_processi_iter->lista_fiber = lista_fiber_elem;
+	lista_fiber_elem->next = str_processo->lista_fiber;
+	str_processo->lista_fiber = lista_fiber_elem;
 	
+	
+	//spin_unlock_irqrestore(&(str_processo->lock_fib_list), str_processo->flags);
+
+
 	return lista_fiber_elem; //Controllo
 }
+
+
+static struct Lista_Fiber* fib_create(void* func, void *stack_pointer, unsigned long stack_size){
+	pid_t pid = current->tgid;
+	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
+	struct Lista_Fiber* lista_fiber_elem;
+
+	//Itera sulla lista processi
+	//Cerca processo corrente
+	spin_lock_irqsave(&(lock_lista_processi), flags);
+
+	while (lista_processi_iter != NULL && lista_processi_iter->id != pid){
+		lista_processi_iter = lista_processi_iter->next;
+	}
+	
+	if (lista_processi_iter == NULL){
+		printk(KERN_INFO "DEBUG CREATE PROBLEMI\n");
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+		return;	//Problemi
+	}
+	
+	//Crea Fiber str
+	lista_fiber_elem=do_fib_create( func, stack_pointer, stack_size,lista_processi_iter);
+	
+	spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+
+	return lista_fiber_elem; //Controllo
+}
+
+
 
 static void fib_switch_to(unsigned long id){
 	pid_t pid = current->tgid;
@@ -483,17 +557,25 @@ static void fib_switch_to(unsigned long id){
 	
 	//Itera sulla lista processi
 	//Cerca processo corrente
+	spin_lock_irqsave(&(lock_lista_processi), flags);
+
 	while (lista_processi_iter != NULL && lista_processi_iter->id != pid){
 		lista_processi_iter = lista_processi_iter->next;
 	}
 	
 	if (lista_processi_iter == NULL){
 		printk(KERN_INFO "DEBUG SWITCH PROBLEMI1\n");
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
 		return;	//Problemi
 	}
 	
 	//Itera sulla lista fiber
 	//Cerca vecchio fiber
+	
+	//spin_lock_irqsave(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+	//spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
 	lista_fiber_iter_old = lista_processi_iter->lista_fiber;
 	while (lista_fiber_iter_old != NULL && lista_fiber_iter_old->runner != tid){
 		lista_fiber_iter_old = lista_fiber_iter_old->next;
@@ -501,6 +583,9 @@ static void fib_switch_to(unsigned long id){
 	
 	if (lista_fiber_iter_old == NULL){
 		printk(KERN_INFO "DEBUG SWITCH PROBLEMI2\n");
+		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
 		return;	//Problemi
 	}
 	
@@ -515,6 +600,9 @@ static void fib_switch_to(unsigned long id){
 	
 	if (lista_fiber_iter_new == NULL || lista_fiber_iter_new->running!=0){
 		printk(KERN_INFO "DEBUG SWITCH PROBLEMI3\n");
+		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
 		return;	//Problemi
 	}
 	
@@ -548,6 +636,10 @@ static void fib_switch_to(unsigned long id){
 	lista_fiber_iter_new->runner = tid;
 	
 	printk(KERN_INFO "DEBUG SWITCH OK\n");
+	
+	//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+	spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
 	return;
 }
 
@@ -604,6 +696,8 @@ static int fib_driver_init(void){
 	}
 	printk(KERN_INFO "Device Driver Insert...Done!!!\n");
 	
+	//Creazione lock
+	lock_lista_processi= __SPIN_LOCK_UNLOCKED(lock_lista_processi); 
 	//Register Proc kprobe
 	kp_readdir.pre_handler = Pre_Handler_Readdir; 
     kp_readdir.post_handler = Post_Handler_Readdir; 
