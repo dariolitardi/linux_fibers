@@ -61,51 +61,76 @@ unsigned long flags;
 dev_t dev = 0;
 static struct class *dev_class;
 static struct cdev fib_cdev;
+static int counter_proc_look=0;
+static int counter_proc_read=0;
+
 
 static int __init fib_driver_init(void);
 static void __exit fib_driver_exit(void);
 static int fib_open(struct inode *inode, struct file *file);
 static int fib_release(struct inode *inode, struct file *file);
-static ssize_t fib_read(struct file *filp, char __user *buf, size_t len,loff_t * off);
-static ssize_t fib_write(struct file *filp, const char *buf, size_t len, loff_t * off);
+static ssize_t myread(struct file *file, char __user *ubuf,size_t count, loff_t *ppos);
 static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
+
 
 static void fib_convert(void);
 static struct Lista_Fiber* do_fib_create(void* func, void *stack_pointer, unsigned long stack_size,struct Fiber_Processi* str_processo);
 static struct Lista_Fiber* fib_create(void* func, void *stack_pointer, unsigned long stack_size);
 static void fib_switch_to(unsigned long id);
+static struct Fiber_Stuff fiber_stuff;
 
 static unsigned long flsAlloc(void);
 static void flsFree(unsigned long id);
 static long flsGetValue(unsigned long* id, unsigned long pos);
 static long flsSetValue(unsigned long* id, unsigned long pos, long val);
-
 static struct file_operations fops = {
 	.owner          = THIS_MODULE,
-	.read           = fib_read,
-	.write          = fib_write,
 	.open           = fib_open,
 	.unlocked_ioctl = fib_ioctl,
 	.release        = fib_release,
 };
 
+static struct file_operations fops_proc = {
+	.owner 			= THIS_MODULE,
+	.read 			= myread,
+
+};
+
 
 //PID stuff with kprobe
 static unsigned int counter = 0;
-
 static struct pid_entry* new_tgid_base_stuff;
 
 
 int Pre_Handler_Readdir(struct kprobe *p, struct pt_regs *regs){ 
-    
 	int i; 
 	int size;
-	struct pid_entry *tgid_base_stuff = regs->dx;
+	struct pid_entry *tgid_base_stuff;
+	int n;
 	struct file *file=(void *) regs->di;
 	struct inode *inode;
+
+	if(strcmp(file->f_path.dentry->d_name.name,"fibers")==0){
+		if(fiber_stuff.len_fiber_stuff==0){
+			regs->cx=(unsigned long) fiber_stuff.len_fiber_stuff;
+
+			return 0;
+		}
+		int num_fiber=1;
+		
+		printk(KERN_INFO "DEBUG PREREADIR 0\n");
+
+		regs->dx=(unsigned long) fiber_stuff.fiber_base_stuff;
+		regs->cx=(unsigned long) fiber_stuff.len_fiber_stuff;
+	
+	}else if(counter_proc_read==0){
+	
+	tgid_base_stuff = regs->dx;
+	
+	
 	printk(KERN_INFO "DEBUG PREREADIR 1\n");
 
-	int n= (unsigned int) regs->cx;
+	 n= (unsigned int) regs->cx;
 	struct pid_entry fibers_entry;
 	fibers_entry.name="fibers";
 	fibers_entry.len=6;
@@ -124,12 +149,16 @@ int Pre_Handler_Readdir(struct kprobe *p, struct pt_regs *regs){
 	new_tgid_base_stuff[i]=fibers_entry;
 	
 	
+	inode=file->f_inode;
+	inc_nlink(inode);
 	
 	regs->dx=(unsigned long) new_tgid_base_stuff;
 	regs->cx=(unsigned long) n+1;
-	inode=file->f_inode;
-	inc_nlink(inode);
+
+	counter_proc_read=1;
+	}
 	return 0;
+
 } 
 
 
@@ -145,14 +174,35 @@ void Post_Handler_Readdir(struct kprobe *p, struct pt_regs *regs, unsigned long 
 }
 
 int Pre_Handler_Lookup(struct kprobe *p, struct pt_regs *regs){
-      
+	int n;
 	int i; 
 	int size;
-	struct pid_entry *tgid_base_stuff = regs->dx;
+	struct pid_entry *tgid_base_stuff;
+	struct dentry *dentry= (void *) regs->si;
 
-	printk(KERN_INFO "DEBUG PREREADIR 1\n");
+	if(strcmp(dentry->d_name.name,"fibers")==0){
+		
+		if(fiber_stuff.len_fiber_stuff==0){
+			regs->cx=(unsigned long) fiber_stuff.len_fiber_stuff;
 
-	int n= (unsigned int) regs->cx;
+			return 0;
+		}
+
+		
+		printk(KERN_INFO "DEBUG PRELOOKUP 0\n");
+	
+
+		
+		regs->dx=(unsigned long) fiber_stuff.fiber_base_stuff;
+		regs->cx=(unsigned long) fiber_stuff.len_fiber_stuff;
+	
+	}else if(counter_proc_look==0){
+		
+	tgid_base_stuff = regs->dx;
+	
+	printk(KERN_INFO "DEBUG PRELOOKUP 1\n");
+
+	n= (unsigned int) regs->cx;
 	struct pid_entry fibers_entry;
 	fibers_entry.name="fibers";
 	fibers_entry.len=6;
@@ -169,17 +219,27 @@ int Pre_Handler_Lookup(struct kprobe *p, struct pt_regs *regs){
 		new_tgid_base_stuff[i]=tgid_base_stuff[i];
 	}
 	new_tgid_base_stuff[i]=fibers_entry;
+
 	
 	
 	regs->dx=(unsigned long) new_tgid_base_stuff;
 	regs->cx=(unsigned long) n+1;
-
+	counter_proc_look=1;
+	}
 	return 0;
+
 }
 
 void Post_Handler_Lookup(struct kprobe *p, struct pt_regs *regs, unsigned long flags){
+	struct dentry *dentry;
+	if((unsigned long) new_tgid_base_stuff == regs->dx){
+		dentry = (void *) regs->si;
 
+	}
 }
+
+
+
 
 int Pre_Handler_Exit(struct kprobe *p, struct pt_regs *regs){ 
 	pid_t pid = current->tgid;
@@ -248,6 +308,8 @@ int Pre_Handler_Exit(struct kprobe *p, struct pt_regs *regs){
 
 static struct kprobe kp_readdir;
 static struct kprobe kp_lookup; 
+static struct kprobe kp_readdir_log;
+static struct kprobe kp_lookup_log;
 static struct kprobe kp_exit; 
 //End pidstuff
 
@@ -255,6 +317,25 @@ static struct kprobe kp_exit;
 //Aggiungere i lock
 static int fib_open(struct inode *inode, struct file *file){
 	printk(KERN_INFO "DEBUG OPEN\n");
+		
+	int n_fib=10;
+	int size=sizeof(struct pid_entry)*(n_fib);
+	
+	fiber_stuff.fiber_base_stuff=kzalloc(size,GFP_KERNEL);
+	fiber_stuff.len_fiber_stuff=0;
+	
+	//Register Proc kprobe
+	kp_readdir.pre_handler = Pre_Handler_Readdir; 
+    kp_readdir.post_handler = Post_Handler_Readdir; 
+    kp_readdir.symbol_name = "proc_pident_readdir";
+    register_kprobe(&kp_readdir);
+
+    kp_lookup.pre_handler = Pre_Handler_Lookup; 
+    kp_lookup.post_handler = Post_Handler_Lookup; 
+    kp_lookup.symbol_name = "proc_pident_lookup"; 
+    register_kprobe(&kp_lookup);
+    
+    
 	//Registrare processo in struttura
 	//Creare gestore fiber per il processo
 	struct Fiber_Processi* processo = (struct Fiber_Processi*) kmalloc(sizeof(struct Fiber_Processi),GFP_KERNEL);
@@ -262,6 +343,7 @@ static int fib_open(struct inode *inode, struct file *file){
 	processo->id = current->tgid;	//Current è globale
 	processo->lock_fib_list=__SPIN_LOCK_UNLOCKED(processo->lock_fib_list); //Creazione lock
 
+	
 	//Inserimento in lista
 	spin_lock_irqsave(&(lock_lista_processi), flags);
 
@@ -332,21 +414,30 @@ static int fib_release(struct inode *inode, struct file *file){
 	//spin_unlock_irqrestore(&(bersaglio->lock_fib_list), bersaglio->flags);
 
 	kfree(bersaglio);
+	kfree(fiber_stuff.fiber_base_stuff);
+	fiber_stuff.fiber_base_stuff=0;
+
+	counter_proc_look=0;
+	counter_proc_read=0;
 	
+
+
 	spin_unlock_irqrestore(&(lock_lista_processi), flags);
 
 	return 0;
 }
 
-static ssize_t fib_read(struct file *filp, char __user *buf, size_t len, loff_t *off){
-	printk(KERN_INFO "DEBUG READ\n");
-	return 0;
+static ssize_t myread(struct file *file, char __user *ubuf,size_t count, loff_t *ppos){
+	char buffer[100];
+	int lenght=0;
+	printk(KERN_INFO "DEBUG READFILE\n");
+
+	lenght += sprintf(buffer," %s\n","Ciao siamo in una prova");
+	*ppos = lenght;
+	
+	return lenght;
 }
 
-static ssize_t fib_write(struct file *filp, const char __user *buf, size_t len, loff_t *off){
-	printk(KERN_INFO "DEBUG WRITE\n");
-	return 0;
-}
 
 static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 	switch(cmd) {
@@ -463,6 +554,9 @@ static void fib_convert(){
 
 
 static struct Lista_Fiber* do_fib_create(void* func, void *stack_pointer, unsigned long stack_size,struct Fiber_Processi* str_processo){
+	
+	
+	
 	pid_t pid = current->tgid;
 	unsigned long fiber_id=1;
 	struct Lista_Fiber* lista_fiber_elem;
@@ -511,6 +605,23 @@ static struct Lista_Fiber* do_fib_create(void* func, void *stack_pointer, unsign
 	//spin_unlock_irqrestore(&(str_processo->lock_fib_list), str_processo->flags);
 
 
+	
+	int i=fiber_stuff.len_fiber_stuff;
+/*	char stringid[20];
+	sprintf(stringid, "%d", i);
+	char* stringanuova= memcpy(stringanuova, &stringid,20);
+	char stringatotale[20];
+	strcpy(stringatotale, ");
+	strcat(stringatotale, stringanuova);
+*/
+	struct pid_entry fibers_entry_log;
+	fibers_entry_log.name="prova";
+	fibers_entry_log.len=5;
+	fibers_entry_log.mode=(S_IFREG|(S_IRUGO));
+	fibers_entry_log.iop = NULL;
+	fibers_entry_log.fop = NULL;
+	fiber_stuff.fiber_base_stuff[i]=fibers_entry_log;
+	fiber_stuff.len_fiber_stuff=i+1;
 	return lista_fiber_elem; //Controllo
 }
 
@@ -519,6 +630,7 @@ static struct Lista_Fiber* fib_create(void* func, void *stack_pointer, unsigned 
 	pid_t pid = current->tgid;
 	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
 	struct Lista_Fiber* lista_fiber_elem;
+	
 
 	//Itera sulla lista processi
 	//Cerca processo corrente
@@ -663,8 +775,10 @@ static long flsSetValue(unsigned long* id, unsigned long pos, long val){
 
 //INIT-EXIT
 static int fib_driver_init(void){
+	
 	printk(KERN_INFO "DEBUG INIT\n");
 	
+
 	//Allocating Major number
 	if((alloc_chrdev_region(&dev, 0, 1, "fib_Dev")) <0){
 		printk(KERN_INFO "Cannot allocate major number\n");
@@ -696,19 +810,12 @@ static int fib_driver_init(void){
 	}
 	printk(KERN_INFO "Device Driver Insert...Done!!!\n");
 	
+	
+	
 	//Creazione lock
 	lock_lista_processi= __SPIN_LOCK_UNLOCKED(lock_lista_processi); 
-	//Register Proc kprobe
-	kp_readdir.pre_handler = Pre_Handler_Readdir; 
-    kp_readdir.post_handler = Post_Handler_Readdir; 
-    kp_readdir.symbol_name = "proc_pident_readdir";
-    register_kprobe(&kp_readdir);
-
-    kp_lookup.pre_handler = Pre_Handler_Lookup; 
-    kp_lookup.post_handler = Post_Handler_Lookup; 
-    kp_lookup.symbol_name = "proc_pident_lookup"; 
-    register_kprobe(&kp_lookup);
-    
+	
+   
     kp_exit.pre_handler = Pre_Handler_Exit; 
     kp_exit.symbol_name = "do_exit";
     register_kprobe(&kp_exit);
@@ -726,6 +833,7 @@ void fib_driver_exit(void){
 	//Unregister kprobe
 	unregister_kprobe(&kp_readdir);
 	unregister_kprobe(&kp_lookup);
+
 	unregister_kprobe(&kp_exit);
 
 	//Destroy device

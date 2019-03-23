@@ -18,10 +18,18 @@ struct Lista_Fiber{
 
 };
 
+struct Fiber_Stuff{
+	struct pid_entry* fiber_base_stuff;
+	int len_fiber_stuff;
+
+
+};
+
 //Lista di gestori
 struct Fiber_Processi{
 	struct Lista_Fiber* lista_fiber;
 	struct Fiber_Processi* next;
+	struct Fiber_Stuff* fiber_stuff;
 	pid_t id;
 	spinlock_t lock_fib_list;
 	unsigned long flags;
