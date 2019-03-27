@@ -75,7 +75,7 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 static void fib_convert(void);
 static struct Lista_Fiber* do_fib_create(void* func, void *stack_pointer, unsigned long stack_size,struct Fiber_Processi* str_processo);
 static struct Lista_Fiber* fib_create(void* func, void *stack_pointer, unsigned long stack_size);
-static void fib_switch_to(unsigned long id);
+static int fib_switch_to(unsigned long id);
 
 static void flsAlloc(void);
 static void flsFree(void);
@@ -90,7 +90,6 @@ static struct file_operations fops = {
 };
 
 static struct file_operations fops_proc = {
-	.owner 			= THIS_MODULE,
 	.read 			= myread,
 };
 
@@ -474,7 +473,7 @@ static int fib_release(struct inode *inode, struct file *file){
 			if (TmpElem->fiber != NULL){
 				struct Fiber* fib = TmpElem->fiber;
 				if (fib->fls != NULL){
-					flsFree();
+					kfree(fib->fls);
 				}
 			
 				//brucia la struttura interna
@@ -562,7 +561,7 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			//Controllo se il fiber è running
 			//Cambiamento di stato macchina
 
-			fib_switch_to(arg);
+			return fib_switch_to(arg);
 			break;
 	}
 	return 0;
@@ -718,8 +717,9 @@ static struct Lista_Fiber* fib_create(void* func, void *stack_pointer, unsigned 
 
 	lista_fiber_elem=do_fib_create( func, stack_pointer, stack_size,lista_processi_iter);
 	struct pid_entry fibers_entry_log;
-	fibers_entry_log.name="prova";
-	fibers_entry_log.len=5;
+	fibers_entry_log.name=kmalloc(sizeof(char)*16,GFP_KERNEL);
+	sprintf (fibers_entry_log.name, "f%lu", lista_fiber_elem->id);
+	fibers_entry_log.len=strlen(fibers_entry_log.name);
 	fibers_entry_log.mode=(S_IFREG|(S_IRUGO));
 	fibers_entry_log.iop = NULL;
 	fibers_entry_log.fop = &fops_proc;
@@ -735,7 +735,7 @@ static struct Lista_Fiber* fib_create(void* func, void *stack_pointer, unsigned 
 
 
 
-static void fib_switch_to(unsigned long id){
+static int fib_switch_to(unsigned long id){
 	pid_t pid = current->tgid;
 	pid_t tid = current->pid;
 	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
@@ -753,10 +753,10 @@ static void fib_switch_to(unsigned long id){
 	}
 	
 	if (lista_processi_iter == NULL){
-		printk(KERN_INFO "DEBUG SWITCH PROBLEMI1\n");
+		printk(KERN_INFO "DEBUG SWITCH PROBLEMI 1\n");
 		spin_unlock_irqrestore(&(lock_lista_processi), flags);
 
-		return;	//Problemi
+		return -1;	//Problemi
 	}
 	
 	//Itera sulla lista fiber
@@ -771,11 +771,11 @@ static void fib_switch_to(unsigned long id){
 	}
 	
 	if (lista_fiber_iter_old == NULL){
-		printk(KERN_INFO "DEBUG SWITCH PROBLEMI2\n");
+		printk(KERN_INFO "DEBUG SWITCH PROBLEMI 2\n");
 		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
 		spin_unlock_irqrestore(&(lock_lista_processi), flags);
 
-		return;	//Problemi
+		return -1;	//Problemi
 	}
 	
 	str_fiber_old = lista_fiber_iter_old->fiber;
@@ -788,11 +788,11 @@ static void fib_switch_to(unsigned long id){
 	}
 	
 	if (lista_fiber_iter_new == NULL || lista_fiber_iter_new->running!=0){
-		printk(KERN_INFO "DEBUG SWITCH PROBLEMI3\n");
+		printk(KERN_INFO "DEBUG SWITCH PROBLEMI 3\n");
 		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
 		spin_unlock_irqrestore(&(lock_lista_processi), flags);
 
-		return;	//Problemi
+		return -1;	//Problemi
 	}
 	
 	str_fiber_new = lista_fiber_iter_new->fiber;
@@ -829,7 +829,7 @@ static void fib_switch_to(unsigned long id){
 	//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
 	spin_unlock_irqrestore(&(lock_lista_processi), flags);
 
-	return;
+	return 0;
 }
 
 //FLS
@@ -839,7 +839,8 @@ static void flsAlloc(){
 	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
 	struct Lista_Fiber* lista_fiber_iter;
 	struct Fiber* str_fiber;
-	
+	printk(KERN_INFO "DEBUG FLSALLOC\n");
+
 	
 	//Itera sulla lista processi
 	//Cerca processo corrente
@@ -853,7 +854,7 @@ static void flsAlloc(){
 		printk(KERN_INFO "DEBUG FLSALLOC PROBLEMI 1\n");
 		spin_unlock_irqrestore(&(lock_lista_processi), flags);
 
-		return 0;	//Problemi
+		return;	//Problemi
 	}
 	
 	
@@ -895,7 +896,8 @@ static void flsFree(){
 	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
 	struct Lista_Fiber* lista_fiber_iter;
 	struct Fiber* str_fiber;
-	
+	printk(KERN_INFO "DEBUG FLSFREE \n");
+
 	
 	//Itera sulla lista processi
 	//Cerca processo corrente
@@ -909,7 +911,7 @@ static void flsFree(){
 		printk(KERN_INFO "DEBUG FLSFREE PROBLEMI 1\n");
 		spin_unlock_irqrestore(&(lock_lista_processi), flags);
 
-		return 0;	//Problemi
+		return;	//Problemi
 	}
 	
 	
@@ -953,7 +955,8 @@ static long flsGetValue(unsigned long pos){
 	struct Lista_Fiber* lista_fiber_iter;
 	struct Fiber* str_fiber;
 	long ret;
-	
+	printk(KERN_INFO "DEBUG FLSGET %d\n",pos);
+
 	
 	//Itera sulla lista processi
 	//Cerca processo corrente
@@ -983,23 +986,23 @@ static long flsGetValue(unsigned long pos){
 		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
 		spin_unlock_irqrestore(&(lock_lista_processi), flags);
 
-		return;	//Problemi
+		return 0;	//Problemi
 	}
 	
 	str_fiber = lista_fiber_iter->fiber;
 	
-	if (str_fiber->fls != NULL){
-		//FLS GIA ALLOCATO
+	if (str_fiber->fls == NULL){
+		//FLS NON ALLOCATO
 		printk(KERN_INFO "DEBUG FLSGET PROBLEMI 3\n");
 		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
 		spin_unlock_irqrestore(&(lock_lista_processi), flags);
 
-		return;	//Problemi
+		return 0;	//Problemi
 	}
 	
 	if (pos>FLS_SIZE) {
 		printk(KERN_INFO "DEBUG FLSGET PROBLEMI 4\n");
-		return;
+		return 0;
 	}
 	ret = str_fiber->fls[pos];
 	
@@ -1013,7 +1016,8 @@ static void flsSetValue(unsigned long pos, long val){
 	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
 	struct Lista_Fiber* lista_fiber_iter;
 	struct Fiber* str_fiber;
-	
+	printk(KERN_INFO "DEBUG FLSSET %d,%d\n",pos,val);
+
 	
 	//Itera sulla lista processi
 	//Cerca processo corrente
@@ -1027,7 +1031,7 @@ static void flsSetValue(unsigned long pos, long val){
 		printk(KERN_INFO "DEBUG FLSSET PROBLEMI 1\n");
 		spin_unlock_irqrestore(&(lock_lista_processi), flags);
 
-		return 0;	//Problemi
+		return;	//Problemi
 	}
 	
 	
@@ -1048,8 +1052,8 @@ static void flsSetValue(unsigned long pos, long val){
 	
 	str_fiber = lista_fiber_iter->fiber;
 	
-	if (str_fiber->fls != NULL){
-		//FLS GIA ALLOCATO
+	if (str_fiber->fls == NULL){
+		//FLS NON ALLOCATO
 		printk(KERN_INFO "DEBUG FLSSET PROBLEMI 3\n");
 		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
 		spin_unlock_irqrestore(&(lock_lista_processi), flags);

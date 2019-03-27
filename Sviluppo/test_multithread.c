@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <pthread.h>
+#include <unistd.h>
 
 #define DEV_NAME "fib_device"
 
@@ -22,6 +23,7 @@
 int fd;
 unsigned long stmp1;
 unsigned long stmp2;
+unsigned long stmp3;
 
 typedef void(*user_function_t)(void* param);
 struct fiber_arguments {
@@ -41,17 +43,25 @@ struct fiber_arguments {
 
 void stampa1(void* parameters){
 	int i;
+	int ret = 2;
 	ioctl(fd, FIB_FLS_ALLOC,NULL);
 	struct fiber_arguments fa;
 	
-	for(i=0;i<1000;++i){
+	for(i=0;i<100;++i){
 		printf("STAMPA1-%d\n",i);
 		fa.fls_index=i;
 		fa.fls_value=i;
 		ioctl(fd, FIB_FLS_SET, &fa);
-		ioctl(fd, FIB_SWITCH_TO, stmp2);
+		do{
+			ret = ioctl(fd, FIB_SWITCH_TO, stmp2);
+			printf("SWITCH RETURNED %d\n",ret);
+			if(ret!=0){
+				sleep(10);
+
+			}		}while(ret!=0);
 		ioctl(fd, FIB_FLS_GET, &fa);
-		printf("STAMPA1_FLS-%l\n",fa.fls_value);
+		printf("STAMPA1_FLS-%d\n",fa.fls_value);
+		
 	}
 	while(1);
 
@@ -60,21 +70,59 @@ void stampa1(void* parameters){
 
 void stampa2(void* parameters){
 	int i;
+	int ret;
 	ioctl(fd, FIB_FLS_ALLOC,NULL);
 	struct fiber_arguments fa;
 	
-	for(i=0;i<1000;++i){
+	for(i=0;i<100;++i){
 		printf("STAMPA2-%d\n",i);
 		fa.fls_index=i;
 		fa.fls_value=i;
 		ioctl(fd, FIB_FLS_SET, &fa);
-		ioctl(fd, FIB_SWITCH_TO, stmp1);
+		do{	
+			
+			ret = ioctl(fd, FIB_SWITCH_TO, stmp3);
+			printf("SWITCH RETURNED %d\n",ret);
+			if(ret!=0){
+				sleep(10);
+
+			}
+
+		}while(ret!=0);
 		ioctl(fd, FIB_FLS_GET, &fa);
-		printf("STAMPA2_FLS-%l\n",fa.fls_value);
+		printf("STAMPA2_FLS-%d\n",fa.fls_value);
 	}
 	while(1);
 	exit(0);
 }
+
+
+void stampa3(void* parameters){
+	int i;
+	int ret;
+	ioctl(fd, FIB_FLS_ALLOC,NULL);
+	struct fiber_arguments fa;
+	
+	for(i=0;i<100;++i){
+		printf("STAMPA3-%d\n",i);
+		fa.fls_index=i;
+		fa.fls_value=i;
+		ioctl(fd, FIB_FLS_SET, &fa);
+		do{
+			ret = ioctl(fd, FIB_SWITCH_TO, stmp1);
+			printf("SWITCH RETURNED %d\n",ret);
+			if(ret!=0){
+				sleep(10);
+
+			}
+		}while(ret!=0);
+		ioctl(fd, FIB_FLS_GET, &fa);
+		printf("STAMPA3_FLS-%d\n",fa.fls_value);
+	}
+	while(1);
+	exit(0);
+}
+
 void* thread_function(void* param){
 	printf("Ingresso thread %d\n", (int) param);
 
@@ -83,8 +131,6 @@ void* thread_function(void* param){
 	printf("Test thread fib_switch_to\n");
 	ioctl(fd, FIB_SWITCH_TO, stmp1);
 	printf("Uscita thread\n");
-
-	
 }
  
 int main()
@@ -113,6 +159,11 @@ int main()
     fa2.stack_pointer= malloc(4096*sizeof(char));
 	fa2.stack_size=4096*sizeof(char);
 
+	struct fiber_arguments fa3;
+    fa3.start_function_address = stampa3;
+    fa3.stack_pointer= malloc(4096*sizeof(char));
+	fa3.stack_size=4096*sizeof(char);
+
  	printf("Test fib_create 1\n");
 	ioctl(fd, FIB_CREATE, &fa1);
 	printf("Test fib_create1 id %ul\n", fa1.fiber_id);
@@ -121,24 +172,25 @@ int main()
 	ioctl(fd, FIB_CREATE, &fa2);
 	printf("Test fib_create2 id %ul\n", fa2.fiber_id);
 
+	printf("Test fib_create 3\n");
+	ioctl(fd, FIB_CREATE, &fa3);
+	printf("Test fib_create3 id %ul\n", fa3.fiber_id);
+	
 	stmp1 = fa1.fiber_id;	
 	stmp2 = fa2.fiber_id;
-	printf("Test stmp1 %p\n", fa1.start_function_address);
-	printf("Test stmp2 %p\n", fa2.start_function_address);
-	printf("Test stampa1 %p\n", stampa1);
-	printf("Test stampa2 %p\n", stampa2);
+	stmp3 = fa3.fiber_id;
+	
 	int i;
 	printf("Test Thread\n");
-
 	pthread_t threads[11];
-	for (i = 0; i < 10; i++) {
-       pthread_create(&threads[i], NULL, thread_function, i);
+	for (i = 0; i < 2; i++) {
+		pthread_create(&threads[i], NULL, thread_function, i);
     }
+    
     printf("Test Join\n");
-
-	for (i = 0; i < 10; i++) {
-                pthread_join(threads[i], NULL);
-        }
+	for (i = 0; i < 2; i++) {
+		pthread_join(threads[i], NULL);
+    }
 	
 	printf("Test Close\n");
 	close(fd);
