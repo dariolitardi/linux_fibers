@@ -6,7 +6,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
- 
+
 #define DEV_NAME "fib_device"
 
 #define FIB_FLS_ALLOC	1
@@ -23,17 +23,17 @@ unsigned long stmp1;
 unsigned long stmp2;
 
 typedef void(*user_function_t)(void* param);
-
 struct fiber_arguments {
         //this struct is used in order to pass arguments to the IOCTL call
         //packing all we need in a void*
         void *stack_pointer;
         unsigned long stack_size;
-        void* start_function_address;
+        void *start_function_address;
         void *start_function_arguments;
         unsigned long fiber_id;
-        long index;
-        unsigned long buffer;
+        unsigned long fls_index;
+        long fls_value;
+		unsigned long buffer;
         unsigned long alloc_size;
 };
 
@@ -88,6 +88,7 @@ int main()
 	printf("Test fib_create 2\n");
 	ioctl(fd, FIB_CREATE, &fa2);
 	printf("Test fib_create2 id %ul\n", fa2.fiber_id);
+	while(1);
 
 	stmp1 = fa1.fiber_id;	
 	stmp2 = fa2.fiber_id;
@@ -95,6 +96,7 @@ int main()
 	printf("Test stmp2 %p\n", fa2.start_function_address);
 	printf("Test stampa1 %p\n", stampa1);
 	printf("Test stampa2 %p\n", stampa2);
+	close(fd);
 
 	printf("Test fib_switch_to\n");
 	ioctl(fd, FIB_SWITCH_TO, stmp1);

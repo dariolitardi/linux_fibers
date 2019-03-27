@@ -49,6 +49,7 @@
 #define FIB_FLS_GET	2
 #define FIB_FLS_SET	3
 #define FIB_FLS_DEALLOC	4
+#define FLS_SIZE 1024
 
 #define FIB_CONVERT	5
 #define FIB_CREATE	6
@@ -61,8 +62,6 @@ unsigned long flags;
 dev_t dev = 0;
 static struct class *dev_class;
 static struct cdev fib_cdev;
-static int counter_proc_look=0;
-static int counter_proc_read=0;
 
 
 static int __init fib_driver_init(void);
@@ -77,12 +76,12 @@ static void fib_convert(void);
 static struct Lista_Fiber* do_fib_create(void* func, void *stack_pointer, unsigned long stack_size,struct Fiber_Processi* str_processo);
 static struct Lista_Fiber* fib_create(void* func, void *stack_pointer, unsigned long stack_size);
 static void fib_switch_to(unsigned long id);
-static struct Fiber_Stuff fiber_stuff;
 
-static unsigned long flsAlloc(void);
-static void flsFree(unsigned long id);
-static long flsGetValue(unsigned long* id, unsigned long pos);
-static long flsSetValue(unsigned long* id, unsigned long pos, long val);
+static void flsAlloc(void);
+static void flsFree(void);
+static long flsGetValue(unsigned long pos);
+static void flsSetValue(unsigned long pos, long val);
+
 static struct file_operations fops = {
 	.owner          = THIS_MODULE,
 	.open           = fib_open,
@@ -93,7 +92,6 @@ static struct file_operations fops = {
 static struct file_operations fops_proc = {
 	.owner 			= THIS_MODULE,
 	.read 			= myread,
-
 };
 
 
@@ -109,54 +107,95 @@ int Pre_Handler_Readdir(struct kprobe *p, struct pt_regs *regs){
 	int n;
 	struct file *file=(void *) regs->di;
 	struct inode *inode;
+	long parent;
+	pid_t id;
+	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
+	kstrtol(file->f_path.dentry->d_parent->d_name.name,10, &parent);
+	id=(pid_t)parent;
 
+	printk(KERN_INFO "DEBUG PREREADDIR\n");
+	printk(KERN_INFO "DEBUG PREREADDIR ID %d\n",id);
+/*
+	//Itera sulla lista processi
+	//Cerca processo corrente
+	spin_lock_irqsave(&(lock_lista_processi), flags);
+
+	while (lista_processi_iter != NULL && lista_processi_iter->id != id){
+			lista_processi_iter = lista_processi_iter->next;
+	}
+	
+	if (lista_processi_iter == NULL){
+		printk(KERN_INFO "DEBUG READDIR PROBLEMI\n");
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+		return 0;	//Problemi
+	}
+*/
 	if(strcmp(file->f_path.dentry->d_name.name,"fibers")==0){
-		if(fiber_stuff.len_fiber_stuff==0){
-			regs->cx=(unsigned long) fiber_stuff.len_fiber_stuff;
+	
+		//Itera sulla lista processi
+		//Cerca processo corrente
+		spin_lock_irqsave(&(lock_lista_processi), flags);
+
+		while (lista_processi_iter != NULL && lista_processi_iter->id != id){
+				lista_processi_iter = lista_processi_iter->next;
+		}
+		
+		if (lista_processi_iter == NULL){
+			printk(KERN_INFO "DEBUG READDIR PROBLEMI\n");
+			spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+			return 0;	//Problemi
+		}
+		
+		if(lista_processi_iter->fiber_stuff.len_fiber_stuff==0){
+			regs->cx=(unsigned long) lista_processi_iter->fiber_stuff.len_fiber_stuff;
+			spin_unlock_irqrestore(&(lock_lista_processi), flags);
 
 			return 0;
 		}
-		int num_fiber=1;
 		
 		printk(KERN_INFO "DEBUG PREREADIR 0\n");
 
-		regs->dx=(unsigned long) fiber_stuff.fiber_base_stuff;
-		regs->cx=(unsigned long) fiber_stuff.len_fiber_stuff;
+		regs->dx=(unsigned long) lista_processi_iter->fiber_stuff.fiber_base_stuff;
+		regs->cx=(unsigned long) lista_processi_iter->fiber_stuff.len_fiber_stuff;
 	
-	}else if(counter_proc_read==0){
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
 	
-	tgid_base_stuff = regs->dx;
+	}else /*if(lista_processi_iter->counter_proc_read==0)*/{
 	
-	
-	printk(KERN_INFO "DEBUG PREREADIR 1\n");
+		tgid_base_stuff = regs->dx;
+		
+		printk(KERN_INFO "DEBUG PREREADIR 1\n");
 
-	 n= (unsigned int) regs->cx;
-	struct pid_entry fibers_entry;
-	fibers_entry.name="fibers";
-	fibers_entry.len=6;
-	fibers_entry.mode=S_IFDIR|S_IRUGO|S_IXUGO;
-	size=sizeof(fibers_entry)*(n+1);
-	new_tgid_base_stuff =  kzalloc(size,GFP_KERNEL);
-	
-	for (i=0; i<n; i++){
-		if (strcmp(tgid_base_stuff[i].name,"attr")==0){
-			fibers_entry.iop = tgid_base_stuff[i].iop;//Questo coso serve a copiare i fop/iop dalla cartella attr
-			fibers_entry.fop = tgid_base_stuff[i].fop;
+		n = (unsigned int) regs->cx;
+		struct pid_entry fibers_entry;
+		fibers_entry.name="fibers";
+		fibers_entry.len=6;
+		fibers_entry.mode=S_IFDIR|S_IRUGO|S_IXUGO;
+		size=sizeof(fibers_entry)*(n+1);
+		new_tgid_base_stuff =  kzalloc(size,GFP_KERNEL);
+		
+		for (i=0; i<n; i++){
+			if (strcmp(tgid_base_stuff[i].name,"attr")==0){
+				fibers_entry.iop = tgid_base_stuff[i].iop;//Questo coso serve a copiare i fop/iop dalla cartella attr
+				fibers_entry.fop = tgid_base_stuff[i].fop;
 
+			}
+			new_tgid_base_stuff[i]=tgid_base_stuff[i];
 		}
-		new_tgid_base_stuff[i]=tgid_base_stuff[i];
-	}
-	new_tgid_base_stuff[i]=fibers_entry;
-	
-	
-	inode=file->f_inode;
-	inc_nlink(inode);
-	
-	regs->dx=(unsigned long) new_tgid_base_stuff;
-	regs->cx=(unsigned long) n+1;
+		new_tgid_base_stuff[i]=fibers_entry;
+		
+		
+		inode=file->f_inode;
+		inc_nlink(inode);
+		
+		regs->dx=(unsigned long) new_tgid_base_stuff;
+		regs->cx=(unsigned long) n+1;
 
-	counter_proc_read=1;
+		//lista_processi_iter->counter_proc_read=1;
 	}
+
 	return 0;
 
 } 
@@ -179,11 +218,51 @@ int Pre_Handler_Lookup(struct kprobe *p, struct pt_regs *regs){
 	int size;
 	struct pid_entry *tgid_base_stuff;
 	struct dentry *dentry= (void *) regs->si;
+	long parent;
+	pid_t id;
+	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
+	
+	kstrtol(dentry->d_parent->d_name.name,10, &parent);
+	id=(pid_t)parent;
+	
+	printk(KERN_INFO "DEBUG PRELOOKUP\n");
+	printk(KERN_INFO "DEBUG PRELOOKUP ID %d\n",id);
+/*
+	//Itera sulla lista processi
+	//Cerca processo corrente
+	spin_lock_irqsave(&(lock_lista_processi), flags);
 
+	while (lista_processi_iter != NULL && lista_processi_iter->id != id){
+		lista_processi_iter = lista_processi_iter->next;
+	}
+	
+	if (lista_processi_iter == NULL){
+		printk(KERN_INFO "DEBUG LOOKUP PROBLEMI\n");
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+		return 0;	//Problemi
+	}
+*/
 	if(strcmp(dentry->d_name.name,"fibers")==0){
+	
+		//Itera sulla lista processi
+		//Cerca processo corrente
+		spin_lock_irqsave(&(lock_lista_processi), flags);
+
+		while (lista_processi_iter != NULL && lista_processi_iter->id != id){
+			lista_processi_iter = lista_processi_iter->next;
+		}
 		
-		if(fiber_stuff.len_fiber_stuff==0){
-			regs->cx=(unsigned long) fiber_stuff.len_fiber_stuff;
+		if (lista_processi_iter == NULL){
+			printk(KERN_INFO "DEBUG LOOKUP PROBLEMI\n");
+			spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+			return 0;	//Problemi
+		}	
+			
+		if(lista_processi_iter->fiber_stuff.len_fiber_stuff==0){
+			regs->cx=(unsigned long) lista_processi_iter->fiber_stuff.len_fiber_stuff;
+			spin_unlock_irqrestore(&(lock_lista_processi), flags);
 
 			return 0;
 		}
@@ -193,14 +272,17 @@ int Pre_Handler_Lookup(struct kprobe *p, struct pt_regs *regs){
 	
 
 		
-		regs->dx=(unsigned long) fiber_stuff.fiber_base_stuff;
-		regs->cx=(unsigned long) fiber_stuff.len_fiber_stuff;
-	
-	}else if(counter_proc_look==0){
+		regs->dx=(unsigned long) lista_processi_iter->fiber_stuff.fiber_base_stuff;
+		regs->cx=(unsigned long) lista_processi_iter->fiber_stuff.len_fiber_stuff;
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
 		
-	tgid_base_stuff = regs->dx;
 	
-	printk(KERN_INFO "DEBUG PRELOOKUP 1\n");
+	}else /*if(lista_processi_iter->counter_proc_look==0)*/{
+		
+		tgid_base_stuff = regs->dx;
+	
+		printk(KERN_INFO "DEBUG PRELOOKUP 1\n");
 
 	n= (unsigned int) regs->cx;
 	struct pid_entry fibers_entry;
@@ -224,8 +306,9 @@ int Pre_Handler_Lookup(struct kprobe *p, struct pt_regs *regs){
 	
 	regs->dx=(unsigned long) new_tgid_base_stuff;
 	regs->cx=(unsigned long) n+1;
-	counter_proc_look=1;
+	//lista_processi_iter->counter_proc_look=1;
 	}
+
 	return 0;
 
 }
@@ -318,23 +401,8 @@ static struct kprobe kp_exit;
 static int fib_open(struct inode *inode, struct file *file){
 	printk(KERN_INFO "DEBUG OPEN\n");
 		
-	int n_fib=10;
-	int size=sizeof(struct pid_entry)*(n_fib);
 	
-	fiber_stuff.fiber_base_stuff=kzalloc(size,GFP_KERNEL);
-	fiber_stuff.len_fiber_stuff=0;
 	
-	//Register Proc kprobe
-	kp_readdir.pre_handler = Pre_Handler_Readdir; 
-    kp_readdir.post_handler = Post_Handler_Readdir; 
-    kp_readdir.symbol_name = "proc_pident_readdir";
-    register_kprobe(&kp_readdir);
-
-    kp_lookup.pre_handler = Pre_Handler_Lookup; 
-    kp_lookup.post_handler = Post_Handler_Lookup; 
-    kp_lookup.symbol_name = "proc_pident_lookup"; 
-    register_kprobe(&kp_lookup);
-    
     
 	//Registrare processo in struttura
 	//Creare gestore fiber per il processo
@@ -342,7 +410,12 @@ static int fib_open(struct inode *inode, struct file *file){
 	memset(processo,0,sizeof(struct Fiber_Processi));	// pulisce la lista dei processi (la nuova entry) per sicurezza perche potrebbe essere ancora in memoria
 	processo->id = current->tgid;	//Current è globale
 	processo->lock_fib_list=__SPIN_LOCK_UNLOCKED(processo->lock_fib_list); //Creazione lock
-
+	int n_fib=10;
+	int size=sizeof(struct pid_entry)*(n_fib);
+	
+	processo->fiber_stuff.fiber_base_stuff=kzalloc(size,GFP_KERNEL);
+	processo->fiber_stuff.len_fiber_stuff=0;
+	
 	
 	//Inserimento in lista
 	spin_lock_irqsave(&(lock_lista_processi), flags);
@@ -353,6 +426,8 @@ static int fib_open(struct inode *inode, struct file *file){
 		Lista_Processi = processo;
 		processo->next = tmp;
 	}
+	
+	
 	spin_unlock_irqrestore(&(lock_lista_processi), flags);
 
 	return 0;
@@ -399,7 +474,7 @@ static int fib_release(struct inode *inode, struct file *file){
 			if (TmpElem->fiber != NULL){
 				struct Fiber* fib = TmpElem->fiber;
 				if (fib->fls != NULL){
-					flsFree(fib->fls);
+					flsFree();
 				}
 			
 				//brucia la struttura interna
@@ -412,13 +487,11 @@ static int fib_release(struct inode *inode, struct file *file){
 		}
 	}
 	//spin_unlock_irqrestore(&(bersaglio->lock_fib_list), bersaglio->flags);
-
+	
+	kfree(bersaglio->fiber_stuff.fiber_base_stuff);
 	kfree(bersaglio);
-	kfree(fiber_stuff.fiber_base_stuff);
-	fiber_stuff.fiber_base_stuff=0;
+	
 
-	counter_proc_look=0;
-	counter_proc_read=0;
 	
 
 
@@ -428,40 +501,42 @@ static int fib_release(struct inode *inode, struct file *file){
 }
 
 static ssize_t myread(struct file *file, char __user *ubuf,size_t count, loff_t *ppos){
-	char buffer[100];
+	size_t s=100;
+	char buffer[s];
 	int lenght=0;
 	printk(KERN_INFO "DEBUG READFILE\n");
 
-	lenght += sprintf(buffer," %s\n","Ciao siamo in una prova");
+	lenght = sprintf(buffer," %s\n","Ciao siamo in una prova");
 	*ppos = lenght;
 	
-	return lenght;
+	return s;
 }
 
-
 static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
+	struct fiber_arguments fa;
+
 	switch(cmd) {
 		//copy_from_user(&to ,&from, sizeof(from));
 		//copy_to_user(&to, &from, sizeof(from));
 
 		case FIB_FLS_ALLOC:
 			printk(KERN_INFO "DEBUG IOCTL FIB_FLS_ALLOC\n");
-			unsigned long tmp_id = flsAlloc();
-			copy_to_user(&arg,&tmp_id,sizeof(tmp_id));
-			//Link alla struttura
+			flsAlloc();
 			break;
 		case FIB_FLS_GET:
 			printk(KERN_INFO "DEBUG IOCTL FIB_FLS_GET\n");
-			long tmp_val = flsGetValue(arg,arg);//id, pos
-			copy_to_user(&arg,&tmp_val,sizeof(tmp_id));
+			copy_from_user(&fa ,(void*)arg, sizeof(struct fiber_arguments));
+			fa.fls_value = (long) flsGetValue(fa.fls_index);//pos
+			copy_to_user(&arg,&fa,sizeof(struct fiber_arguments));
 			break;
 		case FIB_FLS_SET: //Struttura necessaria
 			printk(KERN_INFO "DEBUG IOCTL FIB_FLS_SET\n");
-			flsSetValue(arg,arg,arg);//id, pos, val
+			copy_from_user(&fa ,(void*)arg, sizeof(struct fiber_arguments));
+			flsSetValue(fa.fls_index,fa.fls_value);//pos, val
 			break;
 		case FIB_FLS_DEALLOC:
 			printk(KERN_INFO "DEBUG IOCTL FIB_FLS_DEALLOC\n");
-			flsFree(arg);
+			flsFree();
 			break;
 
 		case FIB_CONVERT:
@@ -476,7 +551,6 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			printk(KERN_INFO "DEBUG IOCTL FIB_CREATE\n");
 			//Allocazione e popolamento strtuttra Fiber
 			//Inserimento oggetto in gestore
-			struct fiber_arguments fa;
 			copy_from_user(&fa ,(void*)arg, sizeof(struct fiber_arguments));
 			printk(KERN_INFO "DEBUG IOCTL FIB_CREATE ARG %p\n", fa.start_function_address);
 
@@ -606,7 +680,6 @@ static struct Lista_Fiber* do_fib_create(void* func, void *stack_pointer, unsign
 
 
 	
-	int i=fiber_stuff.len_fiber_stuff;
 /*	char stringid[20];
 	sprintf(stringid, "%d", i);
 	char* stringanuova= memcpy(stringanuova, &stringid,20);
@@ -614,14 +687,7 @@ static struct Lista_Fiber* do_fib_create(void* func, void *stack_pointer, unsign
 	strcpy(stringatotale, ");
 	strcat(stringatotale, stringanuova);
 */
-	struct pid_entry fibers_entry_log;
-	fibers_entry_log.name="prova";
-	fibers_entry_log.len=5;
-	fibers_entry_log.mode=(S_IFREG|(S_IRUGO));
-	fibers_entry_log.iop = NULL;
-	fibers_entry_log.fop = NULL;
-	fiber_stuff.fiber_base_stuff[i]=fibers_entry_log;
-	fiber_stuff.len_fiber_stuff=i+1;
+	
 	return lista_fiber_elem; //Controllo
 }
 
@@ -648,8 +714,19 @@ static struct Lista_Fiber* fib_create(void* func, void *stack_pointer, unsigned 
 	}
 	
 	//Crea Fiber str
+	int i=lista_processi_iter->fiber_stuff.len_fiber_stuff;
+
 	lista_fiber_elem=do_fib_create( func, stack_pointer, stack_size,lista_processi_iter);
+	struct pid_entry fibers_entry_log;
+	fibers_entry_log.name="prova";
+	fibers_entry_log.len=5;
+	fibers_entry_log.mode=(S_IFREG|(S_IRUGO));
+	fibers_entry_log.iop = NULL;
+	fibers_entry_log.fop = &fops_proc;
+	lista_processi_iter->fiber_stuff.fiber_base_stuff[i]=fibers_entry_log;
+	lista_processi_iter->fiber_stuff.len_fiber_stuff=i+1;
 	
+
 	spin_unlock_irqrestore(&(lock_lista_processi), flags);
 
 
@@ -756,21 +833,238 @@ static void fib_switch_to(unsigned long id){
 }
 
 //FLS
-static unsigned long flsAlloc(){
-	return (unsigned long) kmalloc(sizeof(long)*1024,GFP_KERNEL);
+static void flsAlloc(){
+	pid_t pid = current->tgid;
+	pid_t tid = current->pid;
+	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
+	struct Lista_Fiber* lista_fiber_iter;
+	struct Fiber* str_fiber;
+	
+	
+	//Itera sulla lista processi
+	//Cerca processo corrente
+	spin_lock_irqsave(&(lock_lista_processi), flags);
+
+	while (lista_processi_iter != NULL && lista_processi_iter->id != pid){
+		lista_processi_iter = lista_processi_iter->next;
+	}
+	
+	if (lista_processi_iter == NULL){
+		printk(KERN_INFO "DEBUG FLSALLOC PROBLEMI 1\n");
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+		return 0;	//Problemi
+	}
+	
+	
+	//Itera sulla lista fiber
+	//Cerca fiber
+	lista_fiber_iter = lista_processi_iter->lista_fiber;
+	while (lista_fiber_iter != NULL && lista_fiber_iter->runner != tid){
+		lista_fiber_iter = lista_fiber_iter->next;
+	}
+	
+	if (lista_fiber_iter == NULL || lista_fiber_iter->running == 0){
+		printk(KERN_INFO "DEBUG FLSALLOC PROBLEMI 2\n");
+		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+		return;	//Problemi
+	}
+	
+	str_fiber = lista_fiber_iter->fiber;
+	
+	if (str_fiber->fls != NULL){
+		//FLS GIA ALLOCATO
+		printk(KERN_INFO "DEBUG FLSALLOC PROBLEMI 3\n");
+		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+		return;	//Problemi
+	}
+	
+	str_fiber->fls = (unsigned long*) kmalloc(sizeof(long)*FLS_SIZE,GFP_KERNEL);
+	
+	spin_unlock_irqrestore(&(lock_lista_processi), flags);
+	return;
 }
 
-static void flsFree(unsigned long id){
-	return kfree(id);
+static void flsFree(){
+	pid_t pid = current->tgid;
+	pid_t tid = current->pid;
+	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
+	struct Lista_Fiber* lista_fiber_iter;
+	struct Fiber* str_fiber;
+	
+	
+	//Itera sulla lista processi
+	//Cerca processo corrente
+	spin_lock_irqsave(&(lock_lista_processi), flags);
+
+	while (lista_processi_iter != NULL && lista_processi_iter->id != pid){
+		lista_processi_iter = lista_processi_iter->next;
+	}
+	
+	if (lista_processi_iter == NULL){
+		printk(KERN_INFO "DEBUG FLSFREE PROBLEMI 1\n");
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+		return 0;	//Problemi
+	}
+	
+	
+	//Itera sulla lista fiber
+	//Cerca fiber
+	lista_fiber_iter = lista_processi_iter->lista_fiber;
+	while (lista_fiber_iter != NULL && lista_fiber_iter->runner != tid){
+		lista_fiber_iter = lista_fiber_iter->next;
+	}
+	
+	if (lista_fiber_iter == NULL || lista_fiber_iter->running == 0){
+		printk(KERN_INFO "DEBUG FLSFREE PROBLEMI 2\n");
+		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+		return;	//Problemi
+	}
+	
+	str_fiber = lista_fiber_iter->fiber;
+	
+	if (str_fiber->fls == NULL){
+		//FLS NON ALLOCATO
+		printk(KERN_INFO "DEBUG FLSFREE PROBLEMI 3\n");
+		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+		return;	//Problemi
+	}
+	
+	kfree(str_fiber->fls);
+	str_fiber->fls = NULL;
+	
+	spin_unlock_irqrestore(&(lock_lista_processi), flags);
+	return;
 }
 
-static long flsGetValue(unsigned long* id, unsigned long pos){
-	return id[pos];
+static long flsGetValue(unsigned long pos){
+	pid_t pid = current->tgid;
+	pid_t tid = current->pid;
+	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
+	struct Lista_Fiber* lista_fiber_iter;
+	struct Fiber* str_fiber;
+	long ret;
+	
+	
+	//Itera sulla lista processi
+	//Cerca processo corrente
+	spin_lock_irqsave(&(lock_lista_processi), flags);
+
+	while (lista_processi_iter != NULL && lista_processi_iter->id != pid){
+		lista_processi_iter = lista_processi_iter->next;
+	}
+	
+	if (lista_processi_iter == NULL){
+		printk(KERN_INFO "DEBUG FLSGET PROBLEMI 1\n");
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+		return 0;	//Problemi
+	}
+	
+	
+	//Itera sulla lista fiber
+	//Cerca fiber
+	lista_fiber_iter = lista_processi_iter->lista_fiber;
+	while (lista_fiber_iter != NULL && lista_fiber_iter->runner != tid){
+		lista_fiber_iter = lista_fiber_iter->next;
+	}
+	
+	if (lista_fiber_iter == NULL || lista_fiber_iter->running == 0){
+		printk(KERN_INFO "DEBUG FLSGET PROBLEMI 2\n");
+		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+		return;	//Problemi
+	}
+	
+	str_fiber = lista_fiber_iter->fiber;
+	
+	if (str_fiber->fls != NULL){
+		//FLS GIA ALLOCATO
+		printk(KERN_INFO "DEBUG FLSGET PROBLEMI 3\n");
+		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+		return;	//Problemi
+	}
+	
+	if (pos>FLS_SIZE) {
+		printk(KERN_INFO "DEBUG FLSGET PROBLEMI 4\n");
+		return;
+	}
+	ret = str_fiber->fls[pos];
+	
+	spin_unlock_irqrestore(&(lock_lista_processi), flags);
+	return ret;
 }
 
-static long flsSetValue(unsigned long* id, unsigned long pos, long val){
-	id[pos] = val;
-	return val;
+static void flsSetValue(unsigned long pos, long val){
+	pid_t pid = current->tgid;
+	pid_t tid = current->pid;
+	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
+	struct Lista_Fiber* lista_fiber_iter;
+	struct Fiber* str_fiber;
+	
+	
+	//Itera sulla lista processi
+	//Cerca processo corrente
+	spin_lock_irqsave(&(lock_lista_processi), flags);
+
+	while (lista_processi_iter != NULL && lista_processi_iter->id != pid){
+		lista_processi_iter = lista_processi_iter->next;
+	}
+	
+	if (lista_processi_iter == NULL){
+		printk(KERN_INFO "DEBUG FLSSET PROBLEMI 1\n");
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+		return 0;	//Problemi
+	}
+	
+	
+	//Itera sulla lista fiber
+	//Cerca fiber
+	lista_fiber_iter = lista_processi_iter->lista_fiber;
+	while (lista_fiber_iter != NULL && lista_fiber_iter->runner != tid){
+		lista_fiber_iter = lista_fiber_iter->next;
+	}
+	
+	if (lista_fiber_iter == NULL || lista_fiber_iter->running == 0){
+		printk(KERN_INFO "DEBUG FLSSET PROBLEMI 2\n");
+		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+		return;	//Problemi
+	}
+	
+	str_fiber = lista_fiber_iter->fiber;
+	
+	if (str_fiber->fls != NULL){
+		//FLS GIA ALLOCATO
+		printk(KERN_INFO "DEBUG FLSSET PROBLEMI 3\n");
+		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+		return;	//Problemi
+	}
+	
+	if (pos>FLS_SIZE) {
+		printk(KERN_INFO "DEBUG FLSSET PROBLEMI 4\n");
+		return;
+	}
+	str_fiber->fls[pos] = val;
+	
+	spin_unlock_irqrestore(&(lock_lista_processi), flags);
+	return;
 }
 
 //INIT-EXIT
@@ -815,7 +1109,17 @@ static int fib_driver_init(void){
 	//Creazione lock
 	lock_lista_processi= __SPIN_LOCK_UNLOCKED(lock_lista_processi); 
 	
-   
+	//Register Proc kprobe
+	kp_readdir.pre_handler = Pre_Handler_Readdir; 
+    kp_readdir.post_handler = Post_Handler_Readdir; 
+    kp_readdir.symbol_name = "proc_pident_readdir";
+    register_kprobe(&kp_readdir);
+
+    kp_lookup.pre_handler = Pre_Handler_Lookup; 
+    kp_lookup.post_handler = Post_Handler_Lookup; 
+    kp_lookup.symbol_name = "proc_pident_lookup"; 
+    register_kprobe(&kp_lookup);
+    
     kp_exit.pre_handler = Pre_Handler_Exit; 
     kp_exit.symbol_name = "do_exit";
     register_kprobe(&kp_exit);

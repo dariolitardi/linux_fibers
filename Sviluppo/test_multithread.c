@@ -24,25 +24,34 @@ unsigned long stmp1;
 unsigned long stmp2;
 
 typedef void(*user_function_t)(void* param);
-
 struct fiber_arguments {
         //this struct is used in order to pass arguments to the IOCTL call
         //packing all we need in a void*
         void *stack_pointer;
         unsigned long stack_size;
-        void* start_function_address;
+        void *start_function_address;
         void *start_function_arguments;
         unsigned long fiber_id;
-        long index;
-        unsigned long buffer;
+        unsigned long fls_index;
+        long fls_value;
+		unsigned long buffer;
         unsigned long alloc_size;
 };
 
+
 void stampa1(void* parameters){
 	int i;
+	ioctl(fd, FIB_FLS_ALLOC,NULL);
+	struct fiber_arguments fa;
+	
 	for(i=0;i<1000;++i){
 		printf("STAMPA1-%d\n",i);
+		fa.fls_index=i;
+		fa.fls_value=i;
+		ioctl(fd, FIB_FLS_SET, &fa);
 		ioctl(fd, FIB_SWITCH_TO, stmp2);
+		ioctl(fd, FIB_FLS_GET, &fa);
+		printf("STAMPA1_FLS-%l\n",fa.fls_value);
 	}
 	while(1);
 
@@ -51,9 +60,17 @@ void stampa1(void* parameters){
 
 void stampa2(void* parameters){
 	int i;
+	ioctl(fd, FIB_FLS_ALLOC,NULL);
+	struct fiber_arguments fa;
+	
 	for(i=0;i<1000;++i){
 		printf("STAMPA2-%d\n",i);
+		fa.fls_index=i;
+		fa.fls_value=i;
+		ioctl(fd, FIB_FLS_SET, &fa);
 		ioctl(fd, FIB_SWITCH_TO, stmp1);
+		ioctl(fd, FIB_FLS_GET, &fa);
+		printf("STAMPA2_FLS-%l\n",fa.fls_value);
 	}
 	while(1);
 	exit(0);

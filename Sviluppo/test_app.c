@@ -6,7 +6,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
- 
+
 #define DEV_NAME "fib_device"
 
 #define FIB_FLS_ALLOC	1
@@ -30,6 +30,11 @@ int main()
 		return 0;
 	}
 	printf("PID: %d\n",getpid());
+
+	printf("Test fib_convert\n");
+	ioctl(fd, FIB_CONVERT, (int32_t*) 0); 
+	
+		printf("PID: %d\n",getpid());
 
 	printf("Test fib_convert\n");
 	ioctl(fd, FIB_CONVERT, (int32_t*) 0); 
