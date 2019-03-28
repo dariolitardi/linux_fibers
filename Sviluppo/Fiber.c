@@ -54,6 +54,8 @@
 #define FIB_CONVERT	5
 #define FIB_CREATE	6
 #define FIB_SWITCH_TO	7
+#define FIB_LOG_LEN 512
+
 
 struct Fiber_Processi* Lista_Processi;
 spinlock_t lock_lista_processi;
@@ -499,16 +501,21 @@ static int fib_release(struct inode *inode, struct file *file){
 	return 0;
 }
 
-static ssize_t myread(struct file *file, char __user *ubuf,size_t count, loff_t *ppos){
-	size_t s=100;
-	char buffer[s];
-	int lenght=0;
+static ssize_t myread(struct file *filp, char __user *buf, size_t len, loff_t *off){
+	size_t i;
+	char fiber_stat[FIB_LOG_LEN] = "";
 	printk(KERN_INFO "DEBUG READFILE\n");
 
-	lenght = sprintf(buffer," %s\n","Ciao siamo in una prova");
-	*ppos = lenght;
-	
-	return s;
+	sprintf(fiber_stat," %s\n","Ciao siamo in una prova");
+	if (*off >= strnlen(fiber_stat, FIB_LOG_LEN)){
+		return 0;
+	}
+	i = min_t(size_t, len, strnlen(fiber_stat, FIB_LOG_LEN));
+	if (copy_to_user(buf, fiber_stat, i)) {
+		return -EFAULT;
+	}
+	*off += i;
+	return i;
 }
 
 static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
