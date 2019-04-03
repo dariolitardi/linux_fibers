@@ -612,17 +612,17 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			//Controlla se è già un fiber
 			//Chiamata a FIB_CREATE
 			//Chiama FIB_SWITCH_TO
-			fib_convert();
+			return fib_convert();
 			break;
 		case FIB_CREATE:
 			//PASSA PARAMETRO CON STRUCT
 			printk(KERN_INFO "DEBUG IOCTL FIB_CREATE\n");
-			//Allocazione e popolamento strtuttra Fiber
+			//Allocazione e popolamento struttra Fiber
 			//Inserimento oggetto in gestore
 			copy_from_user(&fa ,(void*)arg, sizeof(struct fiber_arguments));
 			printk(KERN_INFO "DEBUG IOCTL FIB_CREATE ARG %p\n", fa.start_function_address);
 
-			fa.fiber_id=fib_create(fa.start_function_address,fa.stack_pointer,fa.stack_size)->id;
+			fa.fiber_id=fib_create(fa.start_function_address,fa.start_function_parameters,fa.stack_pointer,fa.stack_size)->id;
 			copy_to_user(arg,&fa,sizeof(struct fiber_arguments));
 			break;
 		case FIB_SWITCH_TO:
@@ -637,14 +637,15 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 }
 
 //Funzioni ausiliarie
-static void fib_convert(){
+static unsigned long fib_convert(){
 	pid_t pid = current->tgid;
 	pid_t tid = current->pid;
 	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
 	struct Lista_Fiber* lista_fiber_iter;
 	struct Lista_Fiber* lista_fiber_elem;
 	struct timespec* time_str;
-
+	unsigned long ret=0;
+	
 	//Itera sulla lista processi
 	//Cerca processo corrente
 	spin_lock_irqsave(&(lock_lista_processi), flags);
@@ -656,7 +657,7 @@ static void fib_convert(){
 	if (lista_processi_iter == NULL){
 		spin_unlock_irqrestore(&(lock_lista_processi), flags);
 
-		return;	//Problemi
+		return 0;	//Problemi
 	}
 	
 	//Itera sulla lista fiber
@@ -673,17 +674,17 @@ static void fib_convert(){
 		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
 		spin_unlock_irqrestore(&(lock_lista_processi), flags);
 
-		return;	//Problemi
+		return 0;	//Problemi
 	}
 	
 	//NULLPOINTER QUI SOTTO
 	//Crea nuovo fiber
-	// void * stack_pointer= kmalloc(4096*2*sizeof(char));
 	int stack_size=1;
-	lista_fiber_elem = do_fib_create((void*)1234,1,0,lista_processi_iter);
-	
-	//Manipolazione stato macchina
 	struct pt_regs* my_regs = task_pt_regs(current);
+
+	lista_fiber_elem = do_fib_create((void*)my_regs->ip,0,1,0,lista_processi_iter);
+
+	//Manipolazione stato macchina
 	printk(KERN_INFO "DEBUG CONVERT IP %p\n",my_regs->ip);
 
 	lista_fiber_elem->running = 1;
@@ -696,13 +697,15 @@ static void fib_convert(){
 	lista_fiber_elem->fiber->last_activation_time=time_str->tv_nsec;
 	lista_fiber_elem->fiber->correct_counter=1;
 	kfree(time_str);
+	
+	ret=lista_fiber_elem->id;
 	//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
 	spin_unlock_irqrestore(&(lock_lista_processi), flags);
-
+	return ret;
 }
 
 
-static struct Lista_Fiber* do_fib_create(void* func, void *stack_pointer, unsigned long stack_size,struct Fiber_Processi* str_processo){
+static struct Lista_Fiber* do_fib_create(void* func,void* parameters, void *stack_pointer, unsigned long stack_size,struct Fiber_Processi* str_processo){
 	
 	
 	
@@ -726,6 +729,7 @@ static struct Lista_Fiber* do_fib_create(void* func, void *stack_pointer, unsign
 	str_fiber->regs.ip = (long)func;	//Assegna instruction pointer alla funzione passata
 	str_fiber->regs.sp=(void*)(((char*)stack_pointer)+stack_size-1);
 	str_fiber->regs.bp=str_fiber->regs.sp;
+	str_fiber->regs.di=(long)parameters;
 	//
 	str_fiber->entry_point = func;
 	str_fiber->creator = tid;
@@ -768,7 +772,7 @@ static struct Lista_Fiber* do_fib_create(void* func, void *stack_pointer, unsign
 }
 
 
-static struct Lista_Fiber* fib_create(void* func, void *stack_pointer, unsigned long stack_size){
+static struct Lista_Fiber* fib_create(void* func, void* parameters,void *stack_pointer, unsigned long stack_size){
 	pid_t pid = current->tgid;
 	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
 	struct Lista_Fiber* lista_fiber_elem;
@@ -792,7 +796,7 @@ static struct Lista_Fiber* fib_create(void* func, void *stack_pointer, unsigned 
 	//Crea Fiber str
 	int i=lista_processi_iter->fiber_stuff.len_fiber_stuff;
 
-	lista_fiber_elem=do_fib_create( func, stack_pointer, stack_size,lista_processi_iter);
+	lista_fiber_elem=do_fib_create( func,parameters, stack_pointer, stack_size,lista_processi_iter);
 	struct pid_entry fibers_entry_log;
 	fibers_entry_log.name=kmalloc(sizeof(char)*16,GFP_KERNEL);
 	sprintf (fibers_entry_log.name, "f%lu", lista_fiber_elem->id);

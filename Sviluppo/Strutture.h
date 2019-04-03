@@ -49,7 +49,7 @@ struct fiber_arguments {
         void *stack_pointer;
         unsigned long stack_size;
         void *start_function_address;
-        void *start_function_arguments;
+        void *start_function_parameters;
         unsigned long fiber_id;
         unsigned long fls_index;
         long fls_value;
@@ -75,9 +75,3 @@ struct pid_entry {
 	const struct file_operations *fop;
 	union proc_op op;
 };
-/*
-struct timespec{
-	time_t tv_sec;
-	long tv_nsec;
-};
-*/
