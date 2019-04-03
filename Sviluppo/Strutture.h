@@ -5,6 +5,13 @@ struct Fiber{
 	struct pt_regs regs;
 	struct fpu fpu;
 	long* fls;
+	unsigned long exec_time;
+	unsigned long last_activation_time;
+
+	unsigned long correct_counter;
+	unsigned long failed_counter;
+	void* entry_point;
+	pid_t creator;
 };
 
 
@@ -68,3 +75,9 @@ struct pid_entry {
 	const struct file_operations *fop;
 	union proc_op op;
 };
+/*
+struct timespec{
+	time_t tv_sec;
+	long tv_nsec;
+};
+*/

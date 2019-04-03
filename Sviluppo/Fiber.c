@@ -34,6 +34,7 @@
 #include <linux/stat.h>
 #include <linux/fs.h>
 #include <linux/kallsyms.h>
+#include <linux/time.h>
 #include <linux/spinlock.h>
 #define BUFSIZE  100
 
@@ -54,7 +55,7 @@
 #define FIB_CONVERT	5
 #define FIB_CREATE	6
 #define FIB_SWITCH_TO	7
-#define FIB_LOG_LEN 512
+#define FIB_LOG_LEN 1024
 
 
 struct Fiber_Processi* Lista_Processi;
@@ -502,11 +503,71 @@ static int fib_release(struct inode *inode, struct file *file){
 }
 
 static ssize_t myread(struct file *filp, char __user *buf, size_t len, loff_t *off){
+	
+	pid_t pid;
+	long tmp_pid;
+	unsigned long fib_id;
+	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
+	struct Lista_Fiber* lista_fiber_iter;
+	struct Fiber* str_fiber;
 	size_t i;
 	char fiber_stat[FIB_LOG_LEN] = "";
+	
 	printk(KERN_INFO "DEBUG READFILE\n");
+	
+	//Ottiene gli id (fiber id e pid)
+	
+	kstrtoul(filp->f_path.dentry->d_name.name+1,10, &fib_id);
+	kstrtol(filp->f_path.dentry->d_parent->d_parent->d_name.name,10, &tmp_pid);
+	pid=(pid_t) tmp_pid;
+	printk(KERN_INFO "DEBUG READFILE parent %s\n",filp->f_path.dentry->d_name.name);
 
-	sprintf(fiber_stat," %s\n","Ciao siamo in una prova");
+	//Itera sulla lista processi
+	//Cerca processo corrente
+	spin_lock_irqsave(&(lock_lista_processi), flags);
+
+	while (lista_processi_iter != NULL && lista_processi_iter->id != pid){
+		lista_processi_iter = lista_processi_iter->next;
+	}
+	
+	if (lista_processi_iter == NULL){
+		printk(KERN_INFO "DEBUG READFILE PROBLEMI 1\n");
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+		return -1;	//Problemi
+	}
+	
+	//Itera sulla lista fiber
+	
+	//spin_lock_irqsave(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+	//spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+	lista_fiber_iter = lista_processi_iter->lista_fiber;
+	while (lista_fiber_iter != NULL && lista_fiber_iter->id != fib_id){
+		lista_fiber_iter = lista_fiber_iter->next;
+	}
+	
+	if (lista_fiber_iter == NULL){
+		printk(KERN_INFO "DEBUG READFILE PROBLEMI 2, id: %ul\n",fib_id);
+		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+		spin_unlock_irqrestore(&(lock_lista_processi), flags);
+
+		return -1;	//Problemi
+	}
+	
+	str_fiber = lista_fiber_iter->fiber;
+	
+	char* running_str;
+	if (lista_fiber_iter->running){
+		running_str = "";
+	} else {
+		running_str = "not ";
+	}
+
+	sprintf(fiber_stat,"##FIBER STATISTICS##\n\n - This fiber is currently %srunning.\n - The initial entry point is: %p\n - This fiber was created by: %lu (pid)\n - Succesful activations: %lu\n - Unsuccesful activations: %lu\n - Total running time: %lu msec\n\0",running_str,str_fiber->entry_point,str_fiber->creator,str_fiber->correct_counter,str_fiber->failed_counter,str_fiber->exec_time/1000);
+	spin_unlock_irqrestore(&(lock_lista_processi), flags);
+	
+	
 	if (*off >= strnlen(fiber_stat, FIB_LOG_LEN)){
 		return 0;
 	}
@@ -515,6 +576,7 @@ static ssize_t myread(struct file *filp, char __user *buf, size_t len, loff_t *o
 		return -EFAULT;
 	}
 	*off += i;
+	
 	return i;
 }
 
@@ -581,7 +643,8 @@ static void fib_convert(){
 	struct Fiber_Processi* lista_processi_iter = Lista_Processi;
 	struct Lista_Fiber* lista_fiber_iter;
 	struct Lista_Fiber* lista_fiber_elem;
-	
+	struct timespec* time_str;
+
 	//Itera sulla lista processi
 	//Cerca processo corrente
 	spin_lock_irqsave(&(lock_lista_processi), flags);
@@ -625,8 +688,14 @@ static void fib_convert(){
 
 	lista_fiber_elem->running = 1;
 	lista_fiber_elem->runner = tid;
+			
+	time_str= kmalloc(sizeof(struct timespec),GFP_KERNEL);
+	getnstimeofday(time_str);
 	
 	
+	lista_fiber_elem->fiber->last_activation_time=time_str->tv_nsec;
+	lista_fiber_elem->fiber->correct_counter=1;
+	kfree(time_str);
 	//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
 	spin_unlock_irqrestore(&(lock_lista_processi), flags);
 
@@ -638,6 +707,7 @@ static struct Lista_Fiber* do_fib_create(void* func, void *stack_pointer, unsign
 	
 	
 	pid_t pid = current->tgid;
+	pid_t tid = current->pid;
 	unsigned long fiber_id=1;
 	struct Lista_Fiber* lista_fiber_elem;
 	struct Lista_Fiber* lista_fiber_iter;
@@ -656,7 +726,14 @@ static struct Lista_Fiber* do_fib_create(void* func, void *stack_pointer, unsign
 	str_fiber->regs.ip = (long)func;	//Assegna instruction pointer alla funzione passata
 	str_fiber->regs.sp=(void*)(((char*)stack_pointer)+stack_size-1);
 	str_fiber->regs.bp=str_fiber->regs.sp;
-
+	//
+	str_fiber->entry_point = func;
+	str_fiber->creator = tid;
+	str_fiber->correct_counter = 0;
+	str_fiber->failed_counter = 0;
+	str_fiber->exec_time = 0;
+	str_fiber->last_activation_time = 0;
+	
 	printk(KERN_INFO "DEBUG CREATE FUNC %p\n", func);
 
 	//FPU
@@ -686,14 +763,7 @@ static struct Lista_Fiber* do_fib_create(void* func, void *stack_pointer, unsign
 
 
 	
-/*	char stringid[20];
-	sprintf(stringid, "%d", i);
-	char* stringanuova= memcpy(stringanuova, &stringid,20);
-	char stringatotale[20];
-	strcpy(stringatotale, ");
-	strcat(stringatotale, stringanuova);
-*/
-	
+
 	return lista_fiber_elem; //Controllo
 }
 
@@ -750,6 +820,7 @@ static int fib_switch_to(unsigned long id){
 	struct Lista_Fiber* lista_fiber_iter_new;
 	struct Fiber* str_fiber_old;
 	struct Fiber* str_fiber_new;
+	struct timespec* time_str;
 	
 	//Itera sulla lista processi
 	//Cerca processo corrente
@@ -795,10 +866,15 @@ static int fib_switch_to(unsigned long id){
 	}
 	
 	if (lista_fiber_iter_new == NULL || lista_fiber_iter_new->running!=0){
+		
 		printk(KERN_INFO "DEBUG SWITCH PROBLEMI 3\n");
+		if (lista_fiber_iter_new != NULL) {
+			lista_fiber_iter_new->fiber->failed_counter +=1;
+		}
 		//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
+		
 		spin_unlock_irqrestore(&(lock_lista_processi), flags);
-
+		
 		return -1;	//Problemi
 	}
 	
@@ -831,6 +907,15 @@ static int fib_switch_to(unsigned long id){
 	lista_fiber_iter_new->running = 1;
 	lista_fiber_iter_new->runner = tid;
 	
+		
+	time_str= kmalloc(sizeof(struct timespec),GFP_KERNEL);
+	getnstimeofday(time_str);
+	
+	str_fiber_new->correct_counter += 1;
+	str_fiber_new->last_activation_time =time_str->tv_nsec;
+	str_fiber_old->exec_time += ((str_fiber_new->last_activation_time)-(str_fiber_old->last_activation_time));
+	
+	kfree(time_str);
 	printk(KERN_INFO "DEBUG SWITCH OK\n");
 	
 	//spin_unlock_irqrestore(&(lista_processi_iter->lock_fib_list), lista_processi_iter->flags);
