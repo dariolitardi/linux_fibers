@@ -5,3 +5,4 @@ modificare tgid_base_stuff (array di pid_entry)
 Aggiungere l'entry "Fibers" all'array
 Nota, tgid_base_stuff è globale
 usare cat /proc/kallsyms | grep tgid_base_stuff per acchiappare i puntatori
+sudo truncate -s 0 /var/log/syslog //pulire il syslog

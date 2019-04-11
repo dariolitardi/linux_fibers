@@ -26,7 +26,7 @@
 #define CreateFiber(dwStackSize, lpStartAddress, lpParameter) fib_create(lpStartAddress, lpParameter, dwStackSize)
 #define SwitchToFiber(lpFiber) fib_switch_to(lpFiber)
 #define FlsAlloc(lpCallback) fib_fls_alloc()
-#define FlsFree(dwFlsIndex) fib_fls_dealloc()
+#define FlsFree(dwFlsIndex) fib_fls_dealloc(dwFlsIndex)
 #define FlsGetValue(dwFlsIndex) fib_fls_get(dwFlsIndex)
 #define FlsSetValue(dwFlsIndex, lpFlsData) fib_fls_set(dwFlsIndex, lpFlsData)
 

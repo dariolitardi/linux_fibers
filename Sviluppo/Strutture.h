@@ -5,6 +5,8 @@ struct Fiber{
 	struct pt_regs regs;
 	struct fpu fpu;
 	long* fls;
+    unsigned long* bitmap_fls;
+
 	unsigned long exec_time;
 	unsigned long last_activation_time;
 
@@ -19,7 +21,7 @@ struct Fiber{
 struct Lista_Fiber{
 	struct Fiber* fiber;
 	struct Lista_Fiber* next;
-	unsigned long id;
+	pid_t id;
 	pid_t runner;
 	bool running;
 
@@ -50,9 +52,9 @@ struct fiber_arguments {
         unsigned long stack_size;
         void *start_function_address;
         void *start_function_parameters;
-        unsigned long fiber_id;
-        unsigned long fls_index;
-        long fls_value;
+        pid_t fiber_id;
+        long fls_index;
+        long long fls_value;
 		unsigned long buffer;
         unsigned long alloc_size;
 };

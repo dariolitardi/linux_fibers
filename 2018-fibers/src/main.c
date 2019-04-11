@@ -50,11 +50,13 @@ static void main_loop(void *args) {
 	// Initialize the current fiber's work
 	q_idx = FlsAlloc();
 	state_idx = FlsAlloc();
+	fprintf(stderr,"1\n");
 	
 	if(q_idx == -1 || state_idx == -1) {
 		fprintf(stderr, "No more FLS storage available, aborting...\n");
 		exit(EXIT_FAILURE);
 	}
+	fprintf(stderr,"2\n");
 	
 	FlsSetValue(q_idx, malloc(sizeof(calqueue)));
 	calqueue_init((calqueue *)FlsGetValue(q_idx));
@@ -63,36 +65,45 @@ static void main_loop(void *args) {
 	event->receiver = id;
 	event->sender = id;
 	calqueue_put((calqueue *)FlsGetValue(q_idx), 0.0, event);
+
 	FlsSetValue(state_idx, NULL);
-	
+	fprintf(stderr,"3\n");
+
 	// Do the job!
 	timer_start(fiber_runtime);
 	while(true) {
+	fprintf(stderr,"4\n");
 
 		event = (msg_t *)calqueue_get((calqueue *)FlsGetValue(q_idx));
 		if(event == NULL) {
 			fprintf(stderr, "No events to process!\n");
 			exit(EXIT_FAILURE);
 		}
-		
+			fprintf(stderr,"5\n");
+
 		if(event->receiver != id) {
 			fprintf(stderr, "Something went wrong! Fiber %d is getting data from fiber %d, which is impossible. Aborting...\n", id, event->receiver);
 			exit(EXIT_FAILURE);
 		}
+	fprintf(stderr,"6\n");
 
 		ret = ProcessEvent(event, (lp_state_type *)FlsGetValue(state_idx), (calqueue *)FlsGetValue(q_idx));
-						   
+						fprintf(stderr,"7\n");
+	   
 		if(event->type == INIT) {
 			FlsSetValue(state_idx, ret);
 			ret = 0;
 		}
+	fprintf(stderr,"8\n");
 
 		free(event);
-		
+			fprintf(stderr,"9\n");
+
 		if(ret)
 			break;
 	}
 	millis = timer_value_milli(fiber_runtime);
+	fprintf(stderr,"10\n");
 
 	// Notify other fibers that I'm done and reduce the total time
 	__sync_fetch_and_add(&exec_millis, millis);
