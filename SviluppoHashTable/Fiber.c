@@ -63,7 +63,7 @@
 #define FLS_SIZE 4096
 #define HTSIZE 16
 
-DEFINE_HASHTABLE(processi, HTSIZE);
+DEFINE_HASHTABLE(processi, 10);
 
 dev_t dev = 0;
 static struct class *dev_class;
@@ -125,7 +125,7 @@ int Pre_Handler_Readdir(struct kprobe *p, struct pt_regs *regs){
 	
 		//Itera sulla lista processi
 		//Cerca processo corrente
-
+		int id_hash=(int) id;
 		hash_for_each_possible_rcu(processi, fiber_processo, node, (int)id){
 		
 			if(fiber_processo == NULL) {
@@ -401,7 +401,7 @@ static int fib_open(struct inode *inode, struct file *file){
 	processo->fiber_stuff.fiber_base_stuff=kzalloc(size,GFP_KERNEL);
 	processo->fiber_stuff.len_fiber_stuff=0;
 	
-	hash_init(processo->lista_fiber);   
+	hash_init(processo->listafiber);   
 
 	//Inserimento in lista
     hash_add_rcu(processi, &(processo->node), processo->id);  
@@ -415,6 +415,7 @@ static int fib_release(struct inode *inode, struct file *file){
 	printk(KERN_INFO "DEBUG RELEASE\n");
 	//Rilasciare processo da struttura
 	pid_t pid = current->tgid;
+	pid_t tid = current->pid;
 
 	//Rimozione da lista
 
@@ -436,12 +437,11 @@ static int fib_release(struct inode *inode, struct file *file){
 			printk(KERN_INFO "DEBUG RELEASE PROBLEMI 1\n");
 			return -1;	//Problemi
         }
-	
 	//Deallocazione profonda di bersaglio
 	//Deallocazione lista fiber
-	struct Lista_Fiber* TmpElem = bersaglio->lista_fiber;
+	struct Lista_Fiber* TmpElem;
 	
-	hash_for_each_possible_rcu(fiber_processo->listafiber, TmpElem, node,(int) tid){
+	hash_for_each_possible_rcu(bersaglio->listafiber, TmpElem, node,(int) tid){
 		if (TmpElem == NULL){
 			break;
 		}
@@ -461,8 +461,8 @@ static int fib_release(struct inode *inode, struct file *file){
 			kfree(fib);
 			kfree(TmpElem);
 		}
-
 	}
+	
 	
 		
 
@@ -709,6 +709,8 @@ static struct Lista_Fiber* do_fib_create(void* func,void* parameters, void *stac
 	pid_t tid = current->pid;
 	pid_t fiber_id=1;
 	struct Lista_Fiber* lista_fiber_elem;
+	struct Lista_Fiber* lista_fiber_iter;
+
 	struct Fiber* str_fiber;
 
 	
@@ -758,6 +760,7 @@ static struct Lista_Fiber* do_fib_create(void* func,void* parameters, void *stac
 	memset(lista_fiber_elem,0,sizeof(struct Lista_Fiber));
 	int c=0;
 	//Assegna fiber id
+	
 	hash_for_each_possible_rcu(str_processo->listafiber, lista_fiber_iter, node, (int)tid){
 		if (lista_fiber_iter == NULL ){
 			break;
@@ -998,6 +1001,7 @@ static long flsAlloc(){
 	
 	//Itera sulla lista fiber
 	//Cerca fiber
+	
 	hash_for_each_possible_rcu(fiber_processo->listafiber, lista_fiber_iter, node, (int)tid){
 		if (lista_fiber_iter == NULL || lista_fiber_iter->running == 0){
 			flag_fib=0;
@@ -1087,6 +1091,7 @@ static bool flsFree(long index){
 	
 	//Itera sulla lista fiber
 	//Cerca fiber
+	
 	hash_for_each_possible_rcu(fiber_processo->listafiber, lista_fiber_iter, node, (int) tid){
 		if (lista_fiber_iter == NULL || lista_fiber_iter->running == 0){
 			flag_fib=0;
@@ -1099,6 +1104,7 @@ static bool flsFree(long index){
             break;
         }
 	}
+	
 	if (flag_fib==0){
 			printk(KERN_INFO "DEBUG FLSALLOC PROBLEMI 2\n");
 
@@ -1167,6 +1173,7 @@ static long flsGetValue(long pos){
 	
 	//Itera sulla lista fiber
 	//Cerca fiber
+	
 	hash_for_each_possible_rcu(fiber_processo->listafiber, lista_fiber_iter, node, (int) tid){
 		if (lista_fiber_iter == NULL || lista_fiber_iter->running == 0){
 			flag_fib=0;
@@ -1179,6 +1186,7 @@ static long flsGetValue(long pos){
             break;
         }
 	}
+	
 	if (flag_fib==0){
 			printk(KERN_INFO "DEBUG FLSALLOC PROBLEMI 2\n");
 
@@ -1257,6 +1265,7 @@ static void flsSetValue(long pos, long val){
 	
 	//Itera sulla lista fiber
 	//Cerca fiber
+	
 	hash_for_each_possible_rcu(fiber_processo->listafiber, lista_fiber_iter, node,(int) tid){
 		if (lista_fiber_iter == NULL || lista_fiber_iter->running == 0){
 			flag_fib=0;

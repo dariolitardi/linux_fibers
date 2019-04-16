@@ -1,6 +1,6 @@
 #pragma once
 #include <linux/hashtable.h>
-#define HTSIZE 16
+
 
 //Singola fiber
 struct Fiber{
@@ -36,7 +36,8 @@ struct Fiber_Stuff{
 //Lista di gestori
 struct Fiber_Processi{
 	struct hlist_node node;
-    DECLARE_HASHTABLE(listafiber, HTSIZE);
+    DECLARE_HASHTABLE(listafiber, 10);
+
 	struct Fiber_Stuff fiber_stuff;
 	pid_t id;
 	unsigned int counter_proc_look;
