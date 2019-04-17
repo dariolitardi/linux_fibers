@@ -20,7 +20,7 @@
 // TODO:
 // Here you should point to the invocation of your code!
 // See README.md for further details.
-#include "../Sviluppo/Fiber_interface.h"
+#include "../SviluppoHashTable/Fiber_interface.h"
 
 #define ConvertThreadToFiber() fib_convert()
 #define CreateFiber(dwStackSize, lpStartAddress, lpParameter) fib_create(lpStartAddress, lpParameter, dwStackSize)

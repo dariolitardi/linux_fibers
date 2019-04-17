@@ -42,7 +42,7 @@ struct fiber_arguments {
         void *start_function_parameters;
         pid_t fiber_id;
         long fls_index;
-        long fls_value;
+        long  long fls_value;
 		unsigned long buffer;
         unsigned long alloc_size;
 };
@@ -50,8 +50,8 @@ struct fiber_arguments {
 
 long fib_fls_alloc();
 bool fib_fls_dealloc(long);
-void fib_fls_set(long, long);
-long fib_fls_get(long);
+void fib_fls_set(long, long long);
+long long fib_fls_get(long);
 pid_t fib_convert();
 pid_t fib_create(void*, void *, unsigned long);
 long  fib_switch_to(pid_t);

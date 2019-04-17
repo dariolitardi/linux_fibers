@@ -6,13 +6,13 @@ SRC = 	src/calqueue.c \
 		src/numerical.c \
 		src/thread.c \
 		src/ult.c \
-		../Sviluppo/Fiber_interface.c
+		../SviluppoHashTable/Fiber_interface.c
 		
 CFLAGS = -O3
 EXEC = test
 OBJS := $(SRC:%.c=%.o)
 OBJS := $(OBJS:%.S=%.o)
-LIBS = -lm -lpthread -lexplain
+LIBS = -lm -lpthread
 
 all: $(EXEC)
 

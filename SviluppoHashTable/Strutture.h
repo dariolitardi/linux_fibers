@@ -8,13 +8,13 @@ struct Fiber{
 	struct fpu fpu;
 	spinlock_t lock_fiber;
     unsigned long flags;
-	long* fls;
+	long long* fls;
     unsigned long* bitmap_fls;
 	unsigned long exec_time;
 	unsigned long last_activation_time;
 
 	unsigned long correct_counter;
-	unsigned long failed_counter;
+	atomic_long_t failed_counter;
 	void* entry_point;
 	pid_t creator;
 };
