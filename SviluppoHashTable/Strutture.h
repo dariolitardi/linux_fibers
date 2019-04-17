@@ -6,7 +6,8 @@
 struct Fiber{
 	struct pt_regs regs;
 	struct fpu fpu;
-
+	spinlock_t lock_fiber;
+    unsigned long flags;
 	long* fls;
     unsigned long* bitmap_fls;
 	unsigned long exec_time;
@@ -37,6 +38,7 @@ struct Fiber_Stuff{
 struct Fiber_Processi{
 	struct hlist_node node;
     DECLARE_HASHTABLE(listafiber, 10);
+	pid_t last_fib_id;
 
 	struct Fiber_Stuff fiber_stuff;
 	pid_t id;
