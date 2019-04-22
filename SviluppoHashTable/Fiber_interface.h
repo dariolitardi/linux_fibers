@@ -22,14 +22,14 @@
 
 #define DEV_NAME "fib_device"
 
-#define FIB_FLS_ALLOC	1
+#define FIB_FLS_ALLOC 1
 #define FIB_FLS_GET	404
 #define FIB_FLS_SET	3
 #define FIB_FLS_DEALLOC	4
 
 #define FIB_CONVERT	5
-#define FIB_CREATE	6
-#define FIB_SWITCH_TO	7
+#define FIB_CREATE 6
+#define FIB_SWITCH_TO 7
 
 int IFACE_FIBER_DEV;
 

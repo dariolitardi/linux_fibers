@@ -1,15 +1,23 @@
 #pragma once
 #include <linux/hashtable.h>
+#include <linux/bitmap.h>
+#define FLS_SIZE 4096
 
 
 //Singola fiber
 struct Fiber{
+	struct hlist_node node;
+	pid_t id;
+	pid_t runner;
+	atomic_long_t running;
 	struct pt_regs regs;
 	struct fpu fpu;
 	spinlock_t lock_fiber;
     unsigned long flags;
-	long long* fls;
-    unsigned long* bitmap_fls;
+    
+	long long fls[FLS_SIZE];
+	DECLARE_BITMAP(bitmap_fls, FLS_SIZE);
+    
 	unsigned long exec_time;
 	unsigned long last_activation_time;
 
@@ -20,15 +28,6 @@ struct Fiber{
 };
 
 
-//Lista di fiber locali al processo
-struct Lista_Fiber{
-	struct Fiber* fiber;
-	struct hlist_node node;
-	pid_t id;
-	pid_t runner;
-	bool running;
-
-};
 struct Fiber_Stuff{
 	struct pid_entry* fiber_base_stuff;
 	int len_fiber_stuff;
@@ -38,7 +37,7 @@ struct Fiber_Stuff{
 struct Fiber_Processi{
 	struct hlist_node node;
     DECLARE_HASHTABLE(listafiber, 10);
-	pid_t last_fib_id;
+	atomic_long_t last_fib_id;
 
 	struct Fiber_Stuff fiber_stuff;
 	pid_t id;
