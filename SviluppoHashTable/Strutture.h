@@ -9,7 +9,7 @@ struct Fiber{
 	struct hlist_node node;
 	pid_t id;
 	pid_t runner;
-	atomic_long_t running;
+	int running;
 	struct pt_regs regs;
 	struct fpu fpu;
 	spinlock_t lock_fiber;
@@ -37,7 +37,7 @@ struct Fiber_Stuff{
 struct Fiber_Processi{
 	struct hlist_node node;
     DECLARE_HASHTABLE(listafiber, 10);
-	atomic_long_t last_fib_id;
+	pid_t last_fib_id;
 
 	struct Fiber_Stuff fiber_stuff;
 	pid_t id;

@@ -359,7 +359,7 @@ int Pre_Handler_Exit(struct kprobe *p, struct pt_regs *regs){
 	copy_fxregs_to_kernel(&(lista_fiber_iter_old->fpu));
 	
 	//Manipolazione sistema interno
-	atomic64_set(&(lista_fiber_iter_old->running), -1); // non è più running (-1 vuol dire killato)
+	lista_fiber_iter_old->running = -1; // non è più running (-1 vuol dire killato)
 	lista_fiber_iter_old->runner = 0;
 	
 
@@ -389,7 +389,7 @@ static int fib_open(struct inode *inode, struct file *file){
 	int n_fib=10;
 	int size=sizeof(struct pid_entry)*(n_fib);
 	
-	atomic64_set(&(processo->last_fib_id),0);
+	processo->last_fib_id = 0;
 	processo->fiber_stuff.fiber_base_stuff=kzalloc(size,GFP_KERNEL);
 	processo->fiber_stuff.len_fiber_stuff=0;
 	 
@@ -439,13 +439,12 @@ static int fib_release(struct inode *inode, struct file *file){
 	}
 	 rcu_read_unlock();
 
-	 rcu_read_lock();
+	rcu_read_lock();
 	hash_del_rcu(&(bersaglio->node));
 	rcu_read_unlock();
 
 	kfree(bersaglio->fiber_stuff.fiber_base_stuff);
 	kfree(bersaglio);
-		 rcu_read_unlock();
 	
 
 	return 0;
@@ -515,7 +514,7 @@ static ssize_t myread(struct file *filp, char __user *buf, size_t len, loff_t *o
 	
 	
 	char* running_str;
-	if (atomic64_read(&(lista_fiber_iter->running))==1){
+	if (lista_fiber_iter->running==1){
 		running_str = "";
 	} else {
 		running_str = "not ";
@@ -708,7 +707,7 @@ static pid_t fib_convert(){
 	//Manipolazione stato macchina
 	printk(KERN_INFO "DEBUG CONVERT IP %p\n",my_regs->ip);
 
-	atomic64_set(&(lista_fiber_elem->running), 1);
+	lista_fiber_elem->running = 1;
 	lista_fiber_elem->runner= tid;
 			
 	time_str= kmalloc(sizeof(struct timespec),GFP_KERNEL);
@@ -750,8 +749,8 @@ static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_poin
 
 	//Assegna fiber id
 	
-	atomic64_inc(&(str_processo->last_fib_id));
-	str_fiber->id=atomic64_read(&(str_processo->last_fib_id));
+	str_processo->last_fib_id = str_processo->last_fib_id + 1;
+	str_fiber->id = str_processo->last_fib_id;
 	memset(&str_fiber->regs,0,sizeof(struct pt_regs));
 
 	memcpy(&str_fiber->regs, task_pt_regs(current), sizeof(struct pt_regs)); 
@@ -903,7 +902,7 @@ static long fib_switch_to(pid_t id){
 	 rcu_read_unlock();
 
 	
-	if (!spin_trylock(&lista_fiber_iter_new->lock_fiber) || atomic64_read(&(lista_fiber_iter_new->running)) != 0) {
+	if (!spin_trylock(&lista_fiber_iter_new->lock_fiber) || lista_fiber_iter_new->running != 0) {
 			printk(KERN_INFO "DEBUG SWITCH PROBLEMI 4\n");
 			atomic64_inc(&(lista_fiber_iter_new->failed_counter));
 
@@ -941,7 +940,7 @@ static long fib_switch_to(pid_t id){
 
 	//FPU
 	copy_fxregs_to_kernel(&(lista_fiber_iter_old->fpu));
-	atomic64_set(&(lista_fiber_iter_old->running), 0);
+	lista_fiber_iter_old->running = 0;
 	lista_fiber_iter_old->runner=0;
 	spin_unlock(&lista_fiber_iter_old->lock_fiber);
 //  spin_unlock_irqrestore(&(lista_fiber_iter_old->lock_fiber), lista_fiber_iter_old->flags);
@@ -955,7 +954,7 @@ static long fib_switch_to(pid_t id){
 	
 	
 	copy_kernel_to_fxregs(&(lista_fiber_iter_new->fpu.state.fxsave));
-	atomic64_set(&(lista_fiber_iter_new->running), 1);
+	lista_fiber_iter_new->running = 1;
 	lista_fiber_iter_new->runner = tid;
 	printk(KERN_INFO "DEBUG SWITCH IP 2 %p\n",my_regs->ip);
 //	spin_lock(&(lista_fiber_iter_old->lock_fiber));
@@ -1013,7 +1012,7 @@ static long flsAlloc(){
 	}
 	rcu_read_unlock();
 
-	if (atomic64_read(&(lista_fiber_iter->running))==0){
+	if (lista_fiber_iter->running == 0){
 				printk(KERN_INFO "DEBUG FLSALLOC PROBLEMI 2\n");
 
 				return -1;	//Problemi
@@ -1104,7 +1103,7 @@ static bool flsFree(long index){
 			rcu_read_unlock();
 
 	
-	if (atomic64_read(&(lista_fiber_iter->running)) == 0){
+	if (lista_fiber_iter->running == 0){
 			printk(KERN_INFO "DEBUG FLSFREE PROBLEMI 2\n");
 
 			return false;	//Problemi
@@ -1204,7 +1203,7 @@ static long long flsGetValue(long pos){
 	}
 	rcu_read_unlock();
 	
-	if (atomic64_read(&(lista_fiber_iter->running))==0){
+	if (lista_fiber_iter->running == 0){
 			printk(KERN_INFO "DEBUG FLSGET PROBLEMI 2\n");
 
 			return -1;	//Problemi
@@ -1295,7 +1294,7 @@ static void flsSetValue(long pos, long long val){
 	rcu_read_unlock();
 
 	
-	if (atomic64_read(&(lista_fiber_iter->running))==0){
+	if ( lista_fiber_iter->running == 0){
 			printk(KERN_INFO "DEBUG FLSSET PROBLEMI 2\n");
 
 			return ;	//Problemi
