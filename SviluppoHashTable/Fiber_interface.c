@@ -3,7 +3,7 @@
 
 __attribute__((constructor)) void fiber_init(){
 
-	IFACE_FIBER_DEV = open("/dev/" DEV_NAME, O_RDWR);
+	IFACE_FIBER_DEV = open("/dev/" DEV_NAME, O_RDONLY);
 
 	return;
 }
@@ -16,7 +16,7 @@ __attribute__((destructor)) void close_fiberlib(){
 long fib_fls_alloc(){
 	
 
-	long index=ioctl(IFACE_FIBER_DEV, FIB_FLS_ALLOC, 0);
+	long index=ioctl(IFACE_FIBER_DEV, FIB_FLS_ALLOC, NULL);
 	fprintf(stderr, "ALLOC 1 %ld \n",index);
 	return index;
 }
@@ -65,20 +65,13 @@ pid_t fib_convert(){
 }
 
 pid_t fib_create(void* func, void *parameters, unsigned long stack_size){
-
-	//void* stack_pointer=(void*)malloc(stack_size);
+	void* stack_pointer=(void*)malloc(stack_size);
 	pid_t id;
 	struct fiber_arguments param;
 	param.start_function_address = func;
-	//param.stack_pointer = stack_pointer;
+	param.stack_pointer = stack_pointer;
 	param.stack_size = stack_size;
-	//param.fiber_id=0;
 	param.start_function_parameters=parameters;
-	if (posix_memalign(&(param.stack_pointer), 16, stack_size)){
-		        return -1;
-	}
-	 bzero(param.stack_pointer, stack_size);
-	
 	ioctl(IFACE_FIBER_DEV, FIB_CREATE, &param);
 	id=param.fiber_id;
 	fprintf(stderr,"CREATE %d \n",id);

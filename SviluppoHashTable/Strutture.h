@@ -1,6 +1,7 @@
 #pragma once
 #include <linux/hashtable.h>
 #include <linux/bitmap.h>
+
 #define FLS_SIZE 4096
 
 
@@ -10,11 +11,11 @@ struct Fiber{
 	pid_t id;
 	pid_t runner;
 	int running;
-	struct pt_regs regs;
-	struct fpu fpu;
-	spinlock_t lock_fiber;
+	struct pt_regs* regs;
+	struct fpu* fpu;
     unsigned long flags;
-    
+    spinlock_t lock_fiber;
+
 	long long fls[FLS_SIZE];
 	DECLARE_BITMAP(bitmap_fls, FLS_SIZE);
     
@@ -38,6 +39,7 @@ struct Fiber_Processi{
 	struct hlist_node node;
     DECLARE_HASHTABLE(listafiber, 10);
 	pid_t last_fib_id;
+	spinlock_t lock_fiber;
 
 	struct Fiber_Stuff fiber_stuff;
 	pid_t id;
