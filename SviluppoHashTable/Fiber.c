@@ -80,7 +80,7 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 
 
 static pid_t fib_convert(void);
-static struct Fiber* do_fib_create(void* func, void* parameters,void *stack_pointer, unsigned long stack_size,struct Fiber_Processi* str_processo);
+static struct Fiber* do_fib_create(void* func, void* parameters,void *stack_pointer, unsigned long stack_size,struct Fiber_Processi* str_processo, int flag);
 static struct Fiber* fib_create(void* func, void* parameters,void *stack_pointer, unsigned long stack_size);
 static long fib_switch_to(pid_t id);
 
@@ -396,17 +396,17 @@ static int fib_open(struct inode *inode, struct file *file){
 	processo->last_fib_id=0;
 	processo->fiber_stuff.fiber_base_stuff=kzalloc(size,GFP_KERNEL);
 	processo->fiber_stuff.len_fiber_stuff=0;
-    //processo->lock_fiber = __SPIN_LOCK_UNLOCKED(lock_fiber);   
 	 
-	 rcu_read_lock();
+	rcu_read_lock();
 	hash_init(processo->listafiber);   
+
 
 	//Inserimento in lista
     hash_add_rcu(processi, &(processo->node), processo->id);  
-	 rcu_read_unlock();
+	synchronize_rcu ();	
+	rcu_read_unlock();
 
 
-	
 	return 0;
 }
 
@@ -420,36 +420,35 @@ static int fib_release(struct inode *inode, struct file *file){
 	struct Fiber_Processi* bersaglio;
 	struct Fiber* TmpElem;
 
-	 rcu_read_lock();
+	rcu_read_lock();
 	hash_for_each_possible_rcu(processi, bersaglio, node, pid){
 		
         if (bersaglio->id == pid) {
-			//Deallocazione profonda di bersaglio
+
+		//Deallocazione profonda di bersaglio
 		//Deallocazione lista fiber
 		hash_for_each_rcu(bersaglio->listafiber, i, TmpElem, node){
+
 			hash_del_rcu(&(TmpElem->node));
 		
-	//spin_unlock_irqrestore(&TmpElem->lock_fiber,TmpElem->flags);
-				kfree(TmpElem->regs);
+			//spin_unlock_irqrestore(&TmpElem->lock_fiber,TmpElem->flags);
+			kfree(TmpElem->regs);
 			kfree(TmpElem->fpu);
 
 			kfree(TmpElem);
 
-
-			}
+		}
 		hash_del_rcu(&(bersaglio->node));
 		
-	kfree(bersaglio->fiber_stuff.fiber_base_stuff);
-	kfree(bersaglio);
+		kfree(bersaglio->fiber_stuff.fiber_base_stuff);
+		kfree(bersaglio);
+
+		synchronize_rcu ();	
 
 		}
 	}
-	 rcu_read_unlock();
-
+	rcu_read_unlock();
 	
-
-    //spin_lock(&(struct_process_lock));
-    //spin_unlock(&(struct_process_lock));
 
 	
 
@@ -669,65 +668,53 @@ static pid_t fib_convert(){
 	struct Fiber* lista_fiber_iter;
 	struct Fiber* lista_fiber_elem;
 	struct timespec* time_str;
-	unsigned long ret=0;
 	int i;
-	
+	pid_t ret=-1;
+	int flag_controllo=0;
 	//Itera sulla lista processi
 	//Cerca processo corrente
 	rcu_read_lock();
-	hash_for_each_possible_rcu(processi, fiber_processo, node, pid){
+	hash_for_each_possible_rcu(processi, fiber_processo, node, current->tgid){
 	
-        if (fiber_processo->id == pid) {
+        if (fiber_processo->id == current->tgid) {
 			//Itera sulla lista fiber
 			//Controlla se sono già un fiber
-					 rcu_read_lock();
 			hash_for_each_rcu(fiber_processo->listafiber, i, lista_fiber_iter, node){
-			if (lista_fiber_iter->runner== tid) {
-				printk(KERN_INFO "DEBUG CONVERT PROBLEMI 2\n");
-				rcu_read_unlock();
-				return -1;	//Problemi
+				if (lista_fiber_iter->runner== current->pid) {
+					flag_controllo=1;
+				}
+
 			}
-					 rcu_read_unlock();
+			if(flag_controllo==0){
+		
+				//Crea nuovo fiber
+				int stack_size=1;
+				struct pt_regs* my_regs = current_pt_regs();
 
-	} 
-					rcu_read_unlock();
-
-		//Crea nuovo fiber
-		int stack_size=1;
-		struct pt_regs* my_regs = current_pt_regs();
-
-		lista_fiber_elem = do_fib_create((void*)my_regs->ip,0,1,0,fiber_processo);
-
-		//Manipolazione stato macchina
-		printk(KERN_INFO "DEBUG CONVERT IP %p\n",my_regs->ip);
-
-	lista_fiber_elem->running = 1;
-	lista_fiber_elem->runner = tid;
-			
-	time_str= kmalloc(sizeof(struct timespec),GFP_KERNEL);
-	getnstimeofday(time_str);
+				lista_fiber_elem = do_fib_create((void*)my_regs->ip,0,0,-1,fiber_processo,0);
+				//Manipolazione stato macchina
+				printk(KERN_INFO "DEBUG CONVERT IP %p\n",my_regs->ip);
+				
+				lista_fiber_elem->running = 1;
+				lista_fiber_elem->runner = tid;
+				time_str= kmalloc(sizeof(struct timespec),GFP_KERNEL);
+				getnstimeofday(time_str);
+				lista_fiber_elem->last_activation_time=time_str->tv_nsec;
+				lista_fiber_elem->correct_counter=1;
+				kfree(time_str);
+				ret=lista_fiber_elem->id;
+			}
+		}
+	}
+	rcu_read_unlock();
 	
 	
-	lista_fiber_elem->last_activation_time=time_str->tv_nsec;
-	lista_fiber_elem->correct_counter=1;
-	kfree(time_str);
-
-
-
-	ret=lista_fiber_elem->id;
-
-
-	return ret;	
-	       }
-	}	
-	
-
-	
+	return 	ret;
 	
 }
 
 
-static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_pointer, unsigned long stack_size,struct Fiber_Processi* str_processo){
+static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_pointer, unsigned long stack_size,struct Fiber_Processi* str_processo,int flag){
 
 	
 	pid_t pid = current->tgid;
@@ -737,39 +724,32 @@ static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_poin
 
 	
 	//Crea Fiber str
-	//spin_lock_irqsave(&(str_processo->lock_fib_list), str_processo->flags);
 
 	str_fiber =kmalloc(sizeof(struct Fiber),GFP_KERNEL);
 	memset(str_fiber,0,sizeof(struct Fiber));
-
-    str_fiber->lock_fiber = __SPIN_LOCK_UNLOCKED(lock_fiber);   
-    //spin_lock(&str_fiber->lock_fiber);
-
-    //spin_lock_irqsave(&(str_fiber->lock_fiber),str_fiber->flags);
+	str_fiber->lock_fiber = __SPIN_LOCK_UNLOCKED(lock_fiber);   
+   	spin_lock(&str_fiber->lock_fiber);
+   	
+   	str_fiber->regs = kzalloc(sizeof(struct pt_regs),GFP_KERNEL);
+	memcpy(str_fiber->regs, current_pt_regs(), sizeof(struct pt_regs)); 
+	
+	//FPU
+	str_fiber->fpu = kzalloc(sizeof(struct fpu),GFP_KERNEL);
+	fpu__save(str_fiber->fpu);    
+	
+	
+	//Crea ptregs str
+	if(flag==1){
+		str_fiber->regs->ip = (unsigned long)func;	//Assegna instruction pointer alla funzione passata
+		str_fiber->regs->sp=(unsigned long)stack_pointer+stack_size-8;
+		str_fiber->regs->di=(unsigned long)parameters;
+	}
 
 	//Assegna fiber id
 	
-	str_processo->last_fib_id+=1;
-	str_fiber->id=str_processo->last_fib_id;
-	
-	str_fiber->regs =kmalloc(sizeof(struct pt_regs),GFP_KERNEL);
+	str_processo->last_fib_id += 1;
+	str_fiber->id = str_processo->last_fib_id;
 
-	memset(str_fiber->regs,0,sizeof(struct pt_regs));
-
-	memcpy(str_fiber->regs, current_pt_regs(), sizeof(struct pt_regs)); 
-	//FPU
-	str_fiber->fpu =kmalloc(sizeof(struct fpu),GFP_KERNEL);
-
-	memset(str_fiber->fpu,0,sizeof(struct fpu));
-	fpu__save(str_fiber->fpu);    
-	
-	//Crea ptregs str
-	
-//Crea ptregs str
-	str_fiber->regs->ip = (long)func;	//Assegna instruction pointer alla funzione passata
-	str_fiber->regs->sp=(long)(((char*)stack_pointer)+stack_size-1);
-	str_fiber->regs->bp=(long)str_fiber->regs->sp;
-	str_fiber->regs->di=(long)parameters;
 	//
 	str_fiber->entry_point = func;
 	str_fiber->creator = tid;
@@ -777,38 +757,25 @@ static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_poin
 	atomic64_set(&(str_fiber->failed_counter), 0);
 	str_fiber->exec_time = 0;
 	str_fiber->last_activation_time = 0;
-	
 	str_fiber->runner=0;
 	str_fiber->running=0;
 
 	memset(str_fiber->fls,0,sizeof(long long)*FLS_SIZE);	
 	bitmap_zero(str_fiber->bitmap_fls, FLS_SIZE);  
 
-
-	
-
-	
 	printk(KERN_INFO "DEBUG CREATE FUNC %p\n", func);
 	printk(KERN_INFO "DEBUG CREATE ID %d\n", str_fiber->id);
 
-	                         
-	
-	
 
 	//Collega entry in lista
-	 rcu_read_lock();
-	   //  spin_lock(&str_processo->lock_fiber);
-
-  
+	rcu_read_lock();
 	hash_add_rcu(str_processo->listafiber,&(str_fiber->node), str_fiber->id);
-		 //    spin_unlock(&str_processo->lock_fiber);
-
-	
-	 rcu_read_unlock();
-
+	synchronize_rcu ();	
+	rcu_read_unlock();
+   	spin_unlock(&str_fiber->lock_fiber);
 
 
-	return str_fiber; //Controllo
+	return str_fiber; 
 }
 
 
@@ -820,35 +787,34 @@ static struct Fiber* fib_create(void* func, void* parameters,void *stack_pointer
 
 	//Itera sulla lista processi
 	//Cerca processo corrente
-	 rcu_read_lock();
+	rcu_read_lock();
 	hash_for_each_possible_rcu(processi, fiber_processo, node, pid){
         if (fiber_processo->id == pid) {
            //Crea Fiber str
 			int i=fiber_processo->fiber_stuff.len_fiber_stuff;
 
-		lista_fiber_elem=do_fib_create( func,parameters, stack_pointer, stack_size,fiber_processo);
-		lista_fiber_elem->running=0;
-		lista_fiber_elem->runner=0;
-		//atomic64_set(&(lista_fiber_elem->running), 0);
+			lista_fiber_elem=do_fib_create( func,parameters, stack_pointer, stack_size,fiber_processo,1);
+			lista_fiber_elem->running=0;
+			lista_fiber_elem->runner=0;
 
-		//atomic64_set(&(lista_fiber_elem->running), 0);
 
-		struct pid_entry fibers_entry_log;
-		fibers_entry_log.name=kmalloc(sizeof(char)*16,GFP_KERNEL);
-		sprintf (fibers_entry_log.name, "f%lu", lista_fiber_elem->id);
-		fibers_entry_log.len=strlen(fibers_entry_log.name);
-		fibers_entry_log.mode=(S_IFREG|(S_IRUGO));
-		fibers_entry_log.iop = NULL;
-		fibers_entry_log.fop = &fops_proc;
-		fiber_processo->fiber_stuff.fiber_base_stuff[i]=fibers_entry_log;
-	fiber_processo->fiber_stuff.len_fiber_stuff=i+1;
+			struct pid_entry fibers_entry_log;
+			fibers_entry_log.name=kmalloc(sizeof(char)*16,GFP_KERNEL);
+			sprintf (fibers_entry_log.name, "f%lu", lista_fiber_elem->id);
+			fibers_entry_log.len=strlen(fibers_entry_log.name);
+			fibers_entry_log.mode=(S_IFREG|(S_IRUGO));
+			fibers_entry_log.iop = NULL;
+			fibers_entry_log.fop = &fops_proc;
+			fiber_processo->fiber_stuff.fiber_base_stuff[i]=fibers_entry_log;
+			fiber_processo->fiber_stuff.len_fiber_stuff=i+1;
+			synchronize_rcu ();	
 	
-	 rcu_read_unlock();
-
-	return lista_fiber_elem; //Controllo
+	
         }
 	}
-	
+	rcu_read_unlock();
+
+	return lista_fiber_elem; //Controllo
 
 	
 	
@@ -865,88 +831,82 @@ static long fib_switch_to(pid_t id){
 	
 	//Itera sulla lista processi
 	//Cerca processo corrente
-	
+	long ret;
 	int i;
-	 rcu_read_lock();
+	rcu_read_lock();
 	hash_for_each_possible_rcu(processi, fiber_processo, node,current->tgid){
 		
 	
         if (fiber_processo->id == current->tgid) {
 			
             //Itera sulla lista fiber
-	//Cerca vecchio fiber
-	hash_for_each_rcu(fiber_processo->listafiber, i, lista_fiber_iter_old, node){
+			//Cerca vecchio fiber
+			hash_for_each_rcu(fiber_processo->listafiber, i, lista_fiber_iter_old, node){
 		
-        if (lista_fiber_iter_old->runner == current->pid) {
-		spin_lock(&lista_fiber_iter_old->lock_fiber);
+			if (lista_fiber_iter_old->runner == current->pid) {
 
-	//Manipolazione stato macchina
+				//Manipolazione stato macchina
 	
                 //Itera sulla lista fiber
-	//Cerca nuovo fiber
-	hash_for_each_possible_rcu(fiber_processo->listafiber, lista_fiber_iter_new, node, id){
+				//Cerca nuovo fiber
+				hash_for_each_possible_rcu(fiber_processo->listafiber, lista_fiber_iter_new, node, id){
 	
-        if (lista_fiber_iter_new->id == id) {
+					if (lista_fiber_iter_new->id == id) {
 
-	if (	lista_fiber_iter_new->running!= 0) {
-			printk(KERN_INFO "DEBUG SWITCH PROBLEMI 4 %d %d\n",lista_fiber_iter_new->runner, id);
-			atomic64_inc(&(lista_fiber_iter_new->failed_counter));
-	   spin_unlock(&lista_fiber_iter_old->lock_fiber);
+						if (lista_fiber_iter_new->running!= 0) {
+							spin_lock(&lista_fiber_iter_new->lock_fiber);
 
-	 rcu_read_unlock();
+							printk(KERN_INFO "DEBUG SWITCH PROBLEMI 4");
+							atomic64_inc(&(lista_fiber_iter_new->failed_counter));
+							spin_unlock(&lista_fiber_iter_new->lock_fiber);
 
-			return -1;	//Problemi
-    }
+							ret= -1;	//Problemi
+						}else{
 
-	//struct pt_regs* my_regs=task_pt_regs(current);
-   
- 
-  		printk(KERN_INFO "DEBUG SWITCH IP 0 %p %d %d %d\n",current_pt_regs()->ip, current->pid,lista_fiber_iter_old->running, id);
+							printk(KERN_INFO "DEBUG SWITCH IP 0 %p %d %d %d\n",current_pt_regs()->ip, current->pid,lista_fiber_iter_old->running, id);
 
-	//Salvataggio registri nel vecchio fiber
-	memcpy(lista_fiber_iter_old->regs,current_pt_regs(),sizeof(struct pt_regs));
+							//Salvataggio registri nel vecchio fiber
+							memcpy(lista_fiber_iter_old->regs,current_pt_regs(),sizeof(struct pt_regs));
 
-		//FPU
-	fpu__save(lista_fiber_iter_old->fpu);
-	lista_fiber_iter_old->running= 0;
-	lista_fiber_iter_old->runner=0;
+							//FPU
+							fpu__save(lista_fiber_iter_old->fpu);
+							lista_fiber_iter_old->running= 0;
+							lista_fiber_iter_old->runner=0;
+							spin_lock(&lista_fiber_iter_new->lock_fiber);
 
+							memcpy(current_pt_regs(),lista_fiber_iter_new->regs,sizeof(struct pt_regs));
 
-	memcpy(current_pt_regs(),lista_fiber_iter_new->regs,sizeof(struct pt_regs));
-
-	//FPU
-	//Manipolazione sistema interno
-	fpu__restore(lista_fiber_iter_new->fpu);
+							//FPU
+							//Manipolazione sistema interno
+							fpu__restore(lista_fiber_iter_new->fpu);
 
 	
-	lista_fiber_iter_new->running = 1;
-	lista_fiber_iter_new->runner = current->pid;
-		printk(KERN_INFO "DEBUG SWITCH IP 1 %p %d %d %d\n",current_pt_regs()->ip,
-		 lista_fiber_iter_new->running,lista_fiber_iter_old->running,sizeof(lista_fiber_iter_new->regs));
+							lista_fiber_iter_new->running = 1;
+							lista_fiber_iter_new->runner = current->pid;
+							printk(KERN_INFO "DEBUG SWITCH IP 1 %p %d %d %d\n",current_pt_regs()->ip,
+							lista_fiber_iter_new->running,lista_fiber_iter_old->running,sizeof(lista_fiber_iter_new->regs));
 
-	printk(KERN_INFO "DEBUG SWITCHOK\n");
+							printk(KERN_INFO "DEBUG SWITCHOK\n");
+							spin_unlock(&lista_fiber_iter_new->lock_fiber);
 
-		   spin_unlock(&lista_fiber_iter_old->lock_fiber);
+							ret=0;
 
-synchronize_rcu ();	
+						}
+						synchronize_rcu();	
 	
 
-        }
 
+					}
+      
+				}
 
+			}
 
-        }
-        
-
-        
+		}
 	}
-
-        }
-
 	}
-}
-		 rcu_read_unlock();
-return 0;
+	rcu_read_unlock();
+	return ret;
 	/*	
 	time_str= kmalloc(sizeof(struct timespec),GFP_KERNEL);
 	getnstimeofday(time_str);
@@ -967,7 +927,7 @@ static long flsAlloc(){
 	
 	struct Fiber_Processi* fiber_processo;
 	struct Fiber* lista_fiber_iter;
-	long index;
+	long index=-1;
 	printk(KERN_INFO "DEBUG FLSALLOC\n");
 
 
@@ -981,62 +941,35 @@ static long flsAlloc(){
 		
         if (fiber_processo->id == current->tgid) {
             
-	//Itera sulla lista fiber
-	//Cerca fiber
-	hash_for_each_rcu(fiber_processo->listafiber, i, lista_fiber_iter, node){
-		printk(KERN_INFO "DEBUG FLSALLOCNUM %d\n",lista_fiber_iter->id);
+			//Itera sulla lista fiber
+			//Cerca fiber
+			hash_for_each_rcu(fiber_processo->listafiber, i, lista_fiber_iter, node){
+				//printk(KERN_INFO "DEBUG FLSALLOCNUM %d\n",lista_fiber_iter->id);
 		
-        if (lista_fiber_iter->runner == current->pid) {
+				if (lista_fiber_iter->runner == current->pid) {
 
-  spin_lock(&lista_fiber_iter->lock_fiber);
-
-	
-	
-	if (lista_fiber_iter->running == 0){
-				printk(KERN_INFO "DEBUG FLSALLOC PROBLEMI 2\n");
-  spin_unlock(&lista_fiber_iter->lock_fiber);
-synchronize_rcu ();
-						
-	rcu_read_unlock();
-
-				return -1;	//Problemi
-			}
+					spin_lock(&lista_fiber_iter->lock_fiber);
+					
+					if (lista_fiber_iter->running != 0){
 
 	
-	     index = find_first_zero_bit(lista_fiber_iter->bitmap_fls, FLS_SIZE);
-        if (index == FLS_SIZE)
-        {
-				printk(KERN_INFO "DEBUG FLSALLOC PROBLEMI 5\n");
+						index = find_first_zero_bit(lista_fiber_iter->bitmap_fls, FLS_SIZE);
+						if (index < FLS_SIZE){
 	
-  spin_unlock(&lista_fiber_iter->lock_fiber);
-synchronize_rcu ();
-
-	rcu_read_unlock();
-
-                return -1;
-        }
-
-        change_bit(index, lista_fiber_iter->bitmap_fls);
-		printk(KERN_INFO "DEBUG FLSALLOC %d\n",index);
-	
-	  spin_unlock(&lista_fiber_iter->lock_fiber);
-
-synchronize_rcu ();
-
+							change_bit(index, lista_fiber_iter->bitmap_fls);
+							printk(KERN_INFO "DEBUG FLSALLOC %d\n",index);
 		
+						}
+					}
+					spin_unlock(&lista_fiber_iter->lock_fiber);
+					//synchronize_rcu ();
+				}
+			}	
 		}
 	}
+	rcu_read_unlock();
 
-
-
-
-        }
-	}	
-				 rcu_read_unlock();
-
-				return index; 
-
-
+	return index;
 	
 }
 
@@ -1047,71 +980,44 @@ static bool flsFree(long index){
 	struct Fiber* lista_fiber_iter;
 	int i;
 	printk(KERN_INFO "DEBUG FLSFREE \n");
-
+	bool ret=false;
 	
 	//Itera sulla lista processi
 	//Cerca processo corrente
 	
-		rcu_read_lock();
+	rcu_read_lock();
 	hash_for_each_possible_rcu(processi, fiber_processo, node, pid){
 
         if (fiber_processo->id == pid) {
             
-	//Itera sulla lista fiber
-	//Cerca fiber
-	hash_for_each_rcu(fiber_processo->listafiber, i, lista_fiber_iter, node){
+			//Itera sulla lista fiber
+			//Cerca fiber
+			hash_for_each_rcu(fiber_processo->listafiber, i, lista_fiber_iter, node){
+	
+				if (lista_fiber_iter->runner== tid) {
+					spin_lock(&lista_fiber_iter->lock_fiber);
 
-        if (lista_fiber_iter->runner== tid) {
+					if (lista_fiber_iter->running != 0){
+	    
+						if (index < FLS_SIZE || index >= 0){
 
-
-	if (lista_fiber_iter->running == 0){
-			printk(KERN_INFO "DEBUG FLSFREE PROBLEMI 2\n");
-
-			rcu_read_unlock();
-
-			return false;	//Problemi
-	}
-	 
-
+							if(test_bit(index, lista_fiber_iter->bitmap_fls) != 0){
         
-        
-        
-	 if (index >= FLS_SIZE || index < 0){
-		printk(KERN_INFO "DEBUG FLSFREE PROBLEMI 4\n");
+								change_bit(index, lista_fiber_iter->bitmap_fls);
+								ret=true;
+							}
+						}
 
-			rcu_read_unlock();
-		return false;	//Problemi
-	 }
+					}
+					spin_unlock(&lista_fiber_iter->lock_fiber);
+					//synchronize_rcu ();
 
-  
-
-			if(test_bit(index, lista_fiber_iter->bitmap_fls) == 0)	{
-				printk(KERN_INFO "DEBUG FLSFREE PROBLEMI 5\n");
-
-				rcu_read_unlock();
-
-		return false;	//Problemi
+			}
 		}
-        
-
-    change_bit(index, lista_fiber_iter->bitmap_fls);
-         			rcu_read_unlock();
-
-		return true;
-
-    
-
-        }
 	}
-		//spin_unlock(&fiber_processo->lock_fiber);
-
-			 rcu_read_unlock();
-        }
 	}
-
-
-	
-	
+	rcu_read_unlock();
+	return ret;
 
 }
 
@@ -1123,65 +1029,45 @@ static long long flsGetValue(long pos){
 	int i;
 	printk(KERN_INFO "DEBUG FLSGET \n");
 
-	
+	long long ret;
 	//Itera sulla lista processi
 	//Cerca processo corrente
 	
-		rcu_read_lock();
+	rcu_read_lock();
 	hash_for_each_possible_rcu(processi, fiber_processo, node, pid){
 		
         if (fiber_processo->id == pid) {
-				//spin_lock(&fiber_processo->lock_fiber);
 
-           //Itera sulla lista fiber
+			//Itera sulla lista fiber
 			//Cerca fiber
-		 rcu_read_lock();
 			hash_for_each_rcu(fiber_processo->listafiber, i, lista_fiber_iter, node){
 		
 				if (lista_fiber_iter->runner == tid) {
+					spin_lock(&lista_fiber_iter->lock_fiber);
 					
+					if (lista_fiber_iter->running != 0){
 
+						if (pos<FLS_SIZE || pos>=0) {
+					
+							if(test_bit(pos, lista_fiber_iter->bitmap_fls) != 0){
+								printk(KERN_INFO "DEBUG FLSGET FINE, %ld %lli\n",pos,lista_fiber_iter->fls[pos]);
 
-					if (lista_fiber_iter->running == 0){
-						printk(KERN_INFO "DEBUG FLSGET PROBLEMI 2\n");
+								ret=lista_fiber_iter->fls[pos]; 
 
-						rcu_read_unlock();
+							}
 
-						return -1;	//Problemi
+						}
 					}
-	
-	
-					if (pos>=FLS_SIZE || pos<0) {
-						printk(KERN_INFO "DEBUG FLSGET PROBLEMI 6\n");
+					spin_unlock(&lista_fiber_iter->lock_fiber);
+					//synchronize_rcu ();
 
-						rcu_read_unlock();
-
-						return -1;
-					}
-					if(test_bit(pos, lista_fiber_iter->bitmap_fls) == 0){
-						printk(KERN_INFO "DEBUG FLSGET PROBLEMI 7\n");
-
-						rcu_read_unlock();
-						return -1;
-
-					}
-
-  
-					printk(KERN_INFO "DEBUG FLSGET FINE, %ld %lli\n",pos,lista_fiber_iter->fls[pos]);
-					rcu_read_unlock();
-
-	return 	lista_fiber_iter->fls[pos]; 
-				  
-
+				}
 			}
 		}
-
-
-				 rcu_read_unlock();
-
-        }
 	}
-
+	
+	rcu_read_unlock();
+	return ret;
 
 }
 
@@ -1193,71 +1079,43 @@ static void flsSetValue(long pos, long long val){
 	int i;
 	printk(KERN_INFO "DEBUG FLSSET\n");
 
-	
 	//Itera sulla lista processi
 	//Cerca processo corrente
 
-		rcu_read_lock();
+	rcu_read_lock();
 	hash_for_each_possible_rcu(processi, fiber_processo, node, pid){
 		
 	
         if (fiber_processo->id == pid) {
-          //Itera sulla lista fiber
-	//Cerca fiber
-
-			 rcu_read_lock();
-
-	hash_for_each_rcu(fiber_processo->listafiber, i, lista_fiber_iter, node){
+			//Itera sulla lista fiber
+			//Cerca fiber
 	
-		
-        if (lista_fiber_iter->runner == tid) {
+			hash_for_each_rcu(fiber_processo->listafiber, i, lista_fiber_iter, node){
+					
+				if (lista_fiber_iter->runner == tid) {
+					spin_lock(&lista_fiber_iter->lock_fiber);
 
-			if (lista_fiber_iter->running==0){
-				printk(KERN_INFO "DEBUG FLSSET PROBLEMI 2\n");
+					if (lista_fiber_iter->running!=0){
+						
+						if (pos<FLS_SIZE || pos>=0) {
 			
-
-				rcu_read_unlock();
-
-				return ;	//Problemi
-			}
+							if(test_bit(pos, lista_fiber_iter->bitmap_fls) != 0){
 	
-	
-			if (pos>=FLS_SIZE || pos<0) {
-				printk(KERN_INFO "DEBUG FLSSET PROBLEMI 6\n");
-				rcu_read_unlock();
-
-				return;
-			}
-	
-			if(test_bit(pos, lista_fiber_iter->bitmap_fls) == 0){
-	
-				printk(KERN_INFO "DEBUG FLSSET PROBLEMI 7\n");
-	
-				rcu_read_unlock();
-
-				return;	//Problemi
-			}
-	
-//	memset(&(lista_fiber_iter->fls[pos]),0,sizeof(long long));
-	
-			lista_fiber_iter->fls[pos]=val;
-			printk(KERN_INFO "DEBUG FLSSET %ld,%lld\n",pos,lista_fiber_iter->fls[pos]);
-			rcu_read_unlock();
-return;
+								lista_fiber_iter->fls[pos]=val;
 			  
-        }
+							}		
+						}
+					}
+					spin_unlock(&lista_fiber_iter->lock_fiber);
+					//synchronize_rcu();
+
+					}
+				}
+			}
 	}
+	rcu_read_unlock();
+	return;
 
-			 rcu_read_unlock();
-
-        }
-	}
-
-	
-	
-	
-
-	
 }
 
 //INIT-EXIT
