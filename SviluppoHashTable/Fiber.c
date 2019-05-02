@@ -1,3 +1,4 @@
+#include <linux/ioctl.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/module.h>
@@ -49,17 +50,18 @@
 //PID == THERAD ID
 
 #define DEV_NAME "fib_device"
-//#define WR_VALUE _IOW('a','a',int32_t*)
-//#define RD_VALUE _IOR('a','b',int32_t*)
 
-#define FIB_FLS_ALLOC 1
-#define FIB_FLS_GET	404
-#define FIB_FLS_SET	3
-#define FIB_FLS_DEALLOC	4
+#define IOCTL_MAGIC 'F'
 
-#define FIB_CONVERT	5
-#define FIB_CREATE 6
-#define FIB_SWITCH_TO 7
+#define FIB_FLS_ALLOC _IO(IOCTL_MAGIC, 10)
+#define FIB_FLS_GET	_IOWR(IOCTL_MAGIC, 2, long long)
+#define FIB_FLS_SET _IOW(IOCTL_MAGIC, 3, long long)
+#define FIB_FLS_DEALLOC	_IOW(IOCTL_MAGIC, 4, long)
+#define FIB_CONVERT	_IO(IOCTL_MAGIC, 5)
+#define FIB_CREATE _IOWR(IOCTL_MAGIC, 6, void*)
+#define FIB_SWITCH_TO _IOW(IOCTL_MAGIC, 7, pid_t)
+
+
 #define FIB_LOG_LEN 1024
 
 #define FLS_SIZE 4096
@@ -77,6 +79,7 @@ static int fib_open(struct inode *inode, struct file *file);
 static int fib_release(struct inode *inode, struct file *file);
 static ssize_t myread(struct file *file, char __user *ubuf,size_t count, loff_t *ppos);
 static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
+static char *fiber_devnode(struct device *dev, umode_t *mode);
 
 
 static pid_t fib_convert(void);
@@ -413,7 +416,6 @@ static int fib_open(struct inode *inode, struct file *file){
 static int fib_release(struct inode *inode, struct file *file){
 	printk(KERN_INFO "DEBUG RELEASE\n");
 	//Rilasciare processo da struttura
-	pid_t pid = current->tgid;
 	int i;
 	//Rimozione da lista
 
@@ -421,9 +423,9 @@ static int fib_release(struct inode *inode, struct file *file){
 	struct Fiber* TmpElem;
 
 	rcu_read_lock();
-	hash_for_each_possible_rcu(processi, bersaglio, node, pid){
+	hash_for_each_possible_rcu(processi, bersaglio, node, current->tgid){
 		
-        if (bersaglio->id == pid) {
+        if (bersaglio->id == current->tgid) {
 
 		//Deallocazione profonda di bersaglio
 		//Deallocazione lista fiber
@@ -541,8 +543,8 @@ static ssize_t myread(struct file *filp, char __user *buf, size_t len, loff_t *o
 	return i;
 }
 
-static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 
+static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 	printk(KERN_INFO "DEBUG IOCTL CMD %d\n",cmd);
 	if(cmd == FIB_FLS_ALLOC){
 		//copy_from_user(&to ,&from, sizeof(from));
@@ -555,17 +557,17 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			long ret;
 			if (!access_ok(VERIFY_READ, arg, sizeof(struct fiber_arguments))) {
 					printk(KERN_INFO "DEBUG IOCTL FIB_FLS_GET PROBLEMI 1\n");
-                    return -EFAULT;
+                    return -1;
 			}
             if (copy_from_user(&fa, (void*)arg, sizeof(struct fiber_arguments))) {
 					printk(KERN_INFO "DEBUG IOCTL FIB_FLS_GET PROBLEMI 2\n");
-                    return -EFAULT;
+                    return -1;
             }
       		printk(KERN_INFO "DEBUG IOCTL FIB_FLS_GET\n");
 			fa.fls_value = (long long) flsGetValue(fa.fls_index);//pos
 			if (copy_to_user((void*)arg,&fa,sizeof(struct fiber_arguments))){
 					printk(KERN_INFO "DEBUG IOCTL FIB_FLS_GET PROBLEMI 3\n");
-                    return -EFAULT;
+                    return -1;
 			}
 			return 0;
 			
@@ -574,12 +576,12 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			if (!access_ok(VERIFY_READ, arg, sizeof(struct fiber_arguments))) {
 					printk(KERN_INFO "DEBUG IOCTL FIB_FLS_SET PROBLEMI 1\n");
 
-					return -EFAULT;
+					return -1;
             }
 			if (copy_from_user(&fa ,(void*)arg, sizeof(struct fiber_arguments))){
 					printk(KERN_INFO "DEBUG IOCTL FIB_FLS_SET PROBLEMI 2\n");
 
-				    return -EFAULT;
+				    return -1;
 
 			}
 			printk(KERN_INFO "DEBUG IOCTL FIB_FLS_SET\n");
@@ -591,12 +593,12 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			if (!access_ok(VERIFY_READ, arg, sizeof(struct fiber_arguments))) {
 					printk(KERN_INFO "DEBUG IOCTL FIB_FLS_DEALLOC PROBLEMI 1\n");
 
-                    return -EFAULT;
+                    return -1;
             }
 			if (copy_from_user(&fa ,(void*)arg, sizeof(struct fiber_arguments))){
 					printk(KERN_INFO "DEBUG IOCTL FIB_FLS_DEALLOC PROBLEMI 2\n");
 
-			        return -EFAULT;
+			        return -1;
 
 			}
 			printk(KERN_INFO "DEBUG IOCTL FIB_FLS_DEALLOC\n");
@@ -616,12 +618,12 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			if (!access_ok(VERIFY_READ, arg, sizeof(struct fiber_arguments))) {
 					printk(KERN_INFO "DEBUG IOCTL FIB_CREATE PROBLEMI 1\n");
 
-                    return -EFAULT;
+                    return -1;
              }
              if (copy_from_user(&fa, (void*)arg, sizeof(struct fiber_arguments))) {
 				 	printk(KERN_INFO "DEBUG IOCTL FIB_CREATE PROBLEMI 2\n");
 
-                  return -EFAULT;
+                  return -1;
              }
 			printk(KERN_INFO "DEBUG IOCTL FIB_CREATE\n");
 			//Allocazione e popolamento struttra Fiber
@@ -632,7 +634,7 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			  if (copy_to_user((void*)arg,&fa,sizeof(struct fiber_arguments))){
 				 	printk(KERN_INFO "DEBUG IOCTL FIB_CREATE PROBLEMI 3\n");
 				  
-					return -EFAULT;
+					return -1;
 			  }
 			  return 0;
 		}else if (cmd == FIB_SWITCH_TO){
@@ -641,12 +643,12 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			if (!access_ok(VERIFY_READ, arg, sizeof(struct fiber_arguments))) {
 					printk(KERN_INFO "DEBUG IOCTL FIB_SWITCH_TO PROBLEMI 1\n");
 
-                    return -EFAULT;
+                    return -1;
              }
              if (copy_from_user(&fa, (void*)arg, sizeof(struct fiber_arguments))) {
 			 	printk(KERN_INFO "DEBUG IOCTL FIB_SWITCH_TO PROBLEMI 2\n");
 
-                  return -EFAULT;
+                  return -1;
              }
 			printk(KERN_INFO "DEBUG IOCTL FIB_SWITCH_TO\n");
 			//Controllo se il fiber è running
@@ -656,14 +658,12 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			return ret;
 	}  else {
 			printk(KERN_INFO "DEBUG IOCTL PROBLEMI\n");
-               return -EINVAL;
+               return -1;
         }
 }
 
 //Funzioni ausiliarie
 static pid_t fib_convert(){
-	pid_t pid = current->tgid;
-	pid_t tid = current->pid;
 	struct Fiber_Processi* fiber_processo;
 	struct Fiber* lista_fiber_iter;
 	struct Fiber* lista_fiber_elem;
@@ -696,7 +696,7 @@ static pid_t fib_convert(){
 				printk(KERN_INFO "DEBUG CONVERT IP %p\n",my_regs->ip);
 				
 				lista_fiber_elem->running = 1;
-				lista_fiber_elem->runner = tid;
+				lista_fiber_elem->runner = current->pid;
 				time_str= kmalloc(sizeof(struct timespec),GFP_KERNEL);
 				getnstimeofday(time_str);
 				lista_fiber_elem->last_activation_time=time_str->tv_nsec;
@@ -780,7 +780,6 @@ static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_poin
 
 
 static struct Fiber* fib_create(void* func, void* parameters,void *stack_pointer, unsigned long stack_size){
-	pid_t pid = current->tgid;
 	struct Fiber_Processi* fiber_processo;
 	struct Fiber* lista_fiber_elem;
 
@@ -788,8 +787,8 @@ static struct Fiber* fib_create(void* func, void* parameters,void *stack_pointer
 	//Itera sulla lista processi
 	//Cerca processo corrente
 	rcu_read_lock();
-	hash_for_each_possible_rcu(processi, fiber_processo, node, pid){
-        if (fiber_processo->id == pid) {
+	hash_for_each_possible_rcu(processi, fiber_processo, node,  current->tgid){
+        if (fiber_processo->id == current->tgid) {
            //Crea Fiber str
 			int i=fiber_processo->fiber_stuff.len_fiber_stuff;
 
@@ -974,8 +973,7 @@ static long flsAlloc(){
 }
 
 static bool flsFree(long index){
-	pid_t pid = current->tgid;
-	pid_t tid = current->pid;
+
 	struct Fiber_Processi* fiber_processo;
 	struct Fiber* lista_fiber_iter;
 	int i;
@@ -986,15 +984,15 @@ static bool flsFree(long index){
 	//Cerca processo corrente
 	
 	rcu_read_lock();
-	hash_for_each_possible_rcu(processi, fiber_processo, node, pid){
+	hash_for_each_possible_rcu(processi, fiber_processo, node, current->tgid){
 
-        if (fiber_processo->id == pid) {
+        if (fiber_processo->id == current->tgid) {
             
 			//Itera sulla lista fiber
 			//Cerca fiber
 			hash_for_each_rcu(fiber_processo->listafiber, i, lista_fiber_iter, node){
 	
-				if (lista_fiber_iter->runner== tid) {
+				if (lista_fiber_iter->runner== current->pid) {
 					spin_lock(&lista_fiber_iter->lock_fiber);
 
 					if (lista_fiber_iter->running != 0){
@@ -1010,7 +1008,7 @@ static bool flsFree(long index){
 
 					}
 					spin_unlock(&lista_fiber_iter->lock_fiber);
-					//synchronize_rcu ();
+					//synchronize_rcu();
 
 			}
 		}
@@ -1022,8 +1020,7 @@ static bool flsFree(long index){
 }
 
 static long long flsGetValue(long pos){
-	pid_t pid = current->tgid;
-	pid_t tid = current->pid;
+	
 	struct Fiber_Processi* fiber_processo;
 	struct Fiber* lista_fiber_iter;
 	int i;
@@ -1034,15 +1031,15 @@ static long long flsGetValue(long pos){
 	//Cerca processo corrente
 	
 	rcu_read_lock();
-	hash_for_each_possible_rcu(processi, fiber_processo, node, pid){
+	hash_for_each_possible_rcu(processi, fiber_processo, node, current->tgid){
 		
-        if (fiber_processo->id == pid) {
+        if (fiber_processo->id == current->tgid) {
 
 			//Itera sulla lista fiber
 			//Cerca fiber
 			hash_for_each_rcu(fiber_processo->listafiber, i, lista_fiber_iter, node){
 		
-				if (lista_fiber_iter->runner == tid) {
+				if (lista_fiber_iter->runner == current->pid) {
 					spin_lock(&lista_fiber_iter->lock_fiber);
 					
 					if (lista_fiber_iter->running != 0){
@@ -1059,13 +1056,12 @@ static long long flsGetValue(long pos){
 						}
 					}
 					spin_unlock(&lista_fiber_iter->lock_fiber);
-					//synchronize_rcu ();
+					//synchronize_rcu();
 
 				}
 			}
 		}
 	}
-	
 	rcu_read_unlock();
 	return ret;
 
@@ -1118,6 +1114,13 @@ static void flsSetValue(long pos, long long val){
 
 }
 
+static char *fiber_devnode(struct device *dev, umode_t *mode)
+{
+        if (mode)
+                *mode = 0766;
+        return kasprintf(GFP_KERNEL, "%s", dev_name(dev));
+}
+
 //INIT-EXIT
 static int fib_driver_init(void){
 	
@@ -1135,7 +1138,7 @@ static int fib_driver_init(void){
 	cdev_init(&fib_cdev,&fops);
 	fib_cdev.owner = THIS_MODULE;
 	fib_cdev.ops = &fops;
-
+	
 	//Adding character device to the system
 	if((cdev_add(&fib_cdev,dev,1)) < 0){
 		printk(KERN_INFO "Cannot add the device to the system\n");
@@ -1147,6 +1150,7 @@ static int fib_driver_init(void){
 		printk(KERN_INFO "Cannot create the struct class\n");
 		goto r_class;
 	}
+	dev_class->devnode = fiber_devnode;
 
 	//Create device
 	if((device_create(dev_class,NULL,dev,NULL,DEV_NAME)) == NULL){ // qui si crea il file nel filesystem dev che viene messe in memoria con le sue strutture

@@ -4,10 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
-#include <stdbool.h>
-
+#include <stdbool.h>     
+#include <unistd.h>     
+#include <stdio.h>
+#include <stdlib.h>
 #include <sys/stat.h>
-#include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <pthread.h>
@@ -17,19 +18,21 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <linux/ioctl.h>
 #include <sys/ioctl.h>
 #include <stdbool.h>
 
 #define DEV_NAME "fib_device"
 
-#define FIB_FLS_ALLOC 1
-#define FIB_FLS_GET	404
-#define FIB_FLS_SET	3
-#define FIB_FLS_DEALLOC	4
+#define IOCTL_MAGIC 'F'
 
-#define FIB_CONVERT	5
-#define FIB_CREATE 6
-#define FIB_SWITCH_TO 7
+#define FIB_FLS_ALLOC _IO(IOCTL_MAGIC, 10)
+#define FIB_FLS_GET	_IOWR(IOCTL_MAGIC, 2, long long)
+#define FIB_FLS_SET _IOW(IOCTL_MAGIC, 3, long long)
+#define FIB_FLS_DEALLOC	_IOW(IOCTL_MAGIC, 4, long)
+#define FIB_CONVERT	_IO(IOCTL_MAGIC, 5)
+#define FIB_CREATE _IOWR(IOCTL_MAGIC, 6, void*)
+#define FIB_SWITCH_TO _IOW(IOCTL_MAGIC, 7, pid_t)
 
 int IFACE_FIBER_DEV;
 
