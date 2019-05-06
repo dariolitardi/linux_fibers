@@ -23,16 +23,16 @@
 #include <stdbool.h>
 
 #define DEV_NAME "fib_device"
-
-#define IOCTL_MAGIC 'F'
+#define STACK_SIZE (4096*2)
+#define IOCTL_MAGIC 'f'
 
 #define FIB_FLS_ALLOC _IO(IOCTL_MAGIC, 10)
-#define FIB_FLS_GET	_IOWR(IOCTL_MAGIC, 2, long long)
-#define FIB_FLS_SET _IOW(IOCTL_MAGIC, 3, long long)
-#define FIB_FLS_DEALLOC	_IOW(IOCTL_MAGIC, 4, long)
+#define FIB_FLS_GET	_IOWR(IOCTL_MAGIC, 2, struct fiber_arguments)
+#define FIB_FLS_SET _IOW(IOCTL_MAGIC, 3, struct fiber_arguments)
+#define FIB_FLS_DEALLOC	_IOW(IOCTL_MAGIC, 4, struct fiber_arguments)
 #define FIB_CONVERT	_IO(IOCTL_MAGIC, 5)
-#define FIB_CREATE _IOWR(IOCTL_MAGIC, 6, void*)
-#define FIB_SWITCH_TO _IOW(IOCTL_MAGIC, 7, pid_t)
+#define FIB_CREATE _IOWR(IOCTL_MAGIC, 6, struct fiber_arguments)
+#define FIB_SWITCH_TO _IOW(IOCTL_MAGIC, 7, struct fiber_arguments)
 
 int IFACE_FIBER_DEV;
 

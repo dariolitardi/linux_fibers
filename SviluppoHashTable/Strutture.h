@@ -9,8 +9,6 @@
 struct Fiber{
 	struct hlist_node node;
 	pid_t id;
-	pid_t runner;
-	int running;
 	struct pt_regs* regs;
 	struct fpu* fpu;
     unsigned long flags;
@@ -23,7 +21,7 @@ struct Fiber{
 	unsigned long last_activation_time;
 
 	unsigned long correct_counter;
-	atomic_long_t failed_counter;
+	int failed_counter;
 	void* entry_point;
 	pid_t creator;
 };
@@ -34,11 +32,23 @@ struct Fiber_Stuff{
 	int len_fiber_stuff;
 };
 
+struct Thread {
+        pid_t id; 
+        struct hlist_node node;
+        struct Fiber *runner;
+        struct Fiber_Processi *parent_process;
+
+};
+
+
 //Lista di gestori
 struct Fiber_Processi{
 	struct hlist_node node;
+	DECLARE_HASHTABLE(listathread, 10);
     DECLARE_HASHTABLE(listafiber, 10);
+
 	pid_t last_fib_id;
+
 	spinlock_t lock_fiber;
 
 	struct Fiber_Stuff fiber_stuff;

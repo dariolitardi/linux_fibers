@@ -24,8 +24,9 @@ long fib_fls_alloc(){
 }
 
 bool fib_fls_dealloc(long index){
-	struct fiber_arguments param;
-	param.fls_index = index;
+	struct fiber_arguments param={
+		.fls_index = index,
+	};
 	
 	return ioctl(IFACE_FIBER_DEV, FIB_FLS_DEALLOC, &param);
 }
@@ -70,12 +71,26 @@ pid_t fib_convert(){
 
 pid_t fib_create(void* func, void *parameters, unsigned long stack_size){
 	pid_t id=-1;
-	struct fiber_arguments param;
-	param.fiber_id=-1;
-	param.start_function_address = func;
-	param.stack_size = stack_size;
-	param.start_function_parameters=parameters;
-	if(posix_memalign(&(param.stack_pointer),16, stack_size)){
+	size_t reminder=0;
+
+	struct fiber_arguments param={
+		.fiber_id=-1,
+		.start_function_address = func,
+		.stack_size = stack_size,
+		.start_function_parameters=parameters,
+	};
+
+	// Sanity check
+	if (stack_size <= 0) {
+		return -1;
+	}
+	// Align the size to the page boundary
+	reminder = stack_size % getpagesize();
+	if (reminder != 0) {
+		stack_size += getpagesize() - reminder;
+	}
+	
+	if(posix_memalign(&(param.stack_pointer),16, STACK_SIZE)){
 		return -1;
 	}
 	
@@ -88,10 +103,12 @@ pid_t fib_create(void* func, void *parameters, unsigned long stack_size){
 }
 
 long  fib_switch_to(pid_t id){
+	long ret=-1;
 	fprintf(stderr,"SWITCH %d\n",id);
-	  struct fiber_arguments param = {
+	struct fiber_arguments param = {
                 .fiber_id = id,
-        };
+    };
 
-	return (long) ioctl(IFACE_FIBER_DEV, FIB_SWITCH_TO, &param);
+	ret=ioctl(IFACE_FIBER_DEV, FIB_SWITCH_TO, &param);
+	return ret;
 }
