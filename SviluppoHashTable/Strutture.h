@@ -14,8 +14,8 @@ struct Fiber{
     unsigned long flags;
     spinlock_t lock_fiber;
 
-	long long fls[FLS_SIZE];
-	DECLARE_BITMAP(bitmap_fls, FLS_SIZE);
+	long long* fls;
+	unsigned long *bitmap_fls;
     
 	unsigned long exec_time;
 	unsigned long last_activation_time;
@@ -24,6 +24,7 @@ struct Fiber{
 	int failed_counter;
 	void* entry_point;
 	pid_t creator;
+	struct Thread* selected_thread;
 };
 
 

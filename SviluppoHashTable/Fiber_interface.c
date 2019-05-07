@@ -19,7 +19,7 @@ long fib_fls_alloc(){
 	long index=-1;
 	index=ioctl(IFACE_FIBER_DEV, FIB_FLS_ALLOC);
 	
-	//fprintf(stderr, "ALLOC 1 %ld\n",index);
+	fprintf(stderr, "ALLOC 1 %ld\n",index);
 	return index;
 }
 

@@ -357,8 +357,7 @@ static int fib_open(struct inode *inode, struct file *file){
 
 	//Registrare processo in struttura
 	//Creare gestore fiber per il processo
-	struct Fiber_Processi* processo = (struct Fiber_Processi*) kmalloc(sizeof(struct Fiber_Processi),GFP_KERNEL);
-	memset(processo,0,sizeof(struct Fiber_Processi));	// pulisce la lista dei processi (la nuova entry) per sicurezza perche potrebbe essere ancora in memoria
+	struct Fiber_Processi* processo = (struct Fiber_Processi*) kzalloc(sizeof(struct Fiber_Processi),GFP_KERNEL);
 	//processo->lock_fiber = __SPIN_LOCK_UNLOCKED(processo->lock_fiber);   
 
 	processo->id = current->tgid;	//Current è globale
@@ -369,14 +368,13 @@ static int fib_open(struct inode *inode, struct file *file){
 	processo->fiber_stuff.fiber_base_stuff=kzalloc(size,GFP_KERNEL);
 	processo->fiber_stuff.len_fiber_stuff=0;
 	 
-	rcu_read_lock();
 	hash_init(processo->listafiber);   
 	hash_init(processo->listathread);   
 
 
 	//Inserimento in lista
     hash_add_rcu(processi, &(processo->node), processo->id);  
-	synchronize_rcu ();	
+	synchronize_rcu();	
 	rcu_read_unlock();
 
 
@@ -656,19 +654,20 @@ static pid_t fib_convert(){
 				printk(KERN_INFO "DEBUG CONVERT IP %p\n",my_regs->ip);
 				
 			
-				time_str= kmalloc(sizeof(struct timespec),GFP_KERNEL);
+				time_str= kzalloc(sizeof(struct timespec),GFP_KERNEL);
 				getnstimeofday(time_str);
 				lista_fiber_elem->last_activation_time=time_str->tv_nsec;
 				lista_fiber_elem->correct_counter=1;
+				lista_fiber_elem->selected_thread=lista_thread_elem;
 				kfree(time_str);
 				ret=lista_fiber_elem->id;
 				//Collega entry in lista
 				hash_add_rcu(fiber_processo->listafiber,&(lista_fiber_elem->node), lista_fiber_elem->id);
 				lista_thread_elem->runner=lista_fiber_elem;
 				spin_unlock(&lista_fiber_elem->lock_fiber);
+				synchronize_rcu();	
 
 			}
-			synchronize_rcu();	
 
 		}
 	}
@@ -680,11 +679,12 @@ static pid_t fib_convert(){
 }
 static struct Thread* do_thread_create(struct Fiber_Processi* str_processo, pid_t id){
 	struct Thread* str_thread;
-	str_thread =kmalloc(sizeof(struct Thread),GFP_KERNEL);
-	memset(str_thread,0,sizeof(struct Thread));
+	str_thread =kzalloc(sizeof(struct Thread),GFP_KERNEL);
 	str_thread->id=id;
+	str_thread->runner=NULL;
 	rcu_read_lock();
 	hash_add_rcu(str_processo->listathread,&(str_thread->node), str_thread->id);
+	synchronize_rcu();	
 	rcu_read_unlock();
 
 	return str_thread;
@@ -702,8 +702,7 @@ static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_poin
 	
 	//Crea Fiber str
 
-	str_fiber =kmalloc(sizeof(struct Fiber),GFP_KERNEL);
-	memset(str_fiber,0,sizeof(struct Fiber));
+	str_fiber =kzalloc(sizeof(struct Fiber),GFP_KERNEL);
 	str_fiber->lock_fiber = __SPIN_LOCK_UNLOCKED(lock_fiber);   
    	spin_lock(&str_fiber->lock_fiber);
    	
@@ -718,7 +717,8 @@ static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_poin
 	//Crea ptregs str
 	if(flag==1){
 		str_fiber->regs->ip = (unsigned long)func;	//Assegna instruction pointer alla funzione passata
-		str_fiber->regs->sp=(unsigned long)stack_pointer+stack_size-8;
+		str_fiber->regs->sp=(unsigned long) stack_pointer + stack_size - 8;
+		str_fiber->regs->bp =(unsigned long) str_fiber->regs->sp;
 		str_fiber->regs->di=(unsigned long)parameters;
 	}
 
@@ -734,9 +734,9 @@ static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_poin
 	str_fiber->failed_counter =0;
 	str_fiber->exec_time = 0;
 	str_fiber->last_activation_time = 0;
-	
-	memset(str_fiber->fls,0,sizeof(long long)*FLS_SIZE);	
-	bitmap_zero(str_fiber->bitmap_fls, FLS_SIZE);  
+	str_fiber->selected_thread=NULL;
+	str_fiber->fls= kzalloc(sizeof(long long)*FLS_SIZE,GFP_KERNEL);
+	str_fiber->bitmap_fls= kzalloc(sizeof(unsigned long)*FLS_SIZE,GFP_KERNEL);
 
 	printk(KERN_INFO "DEBUG CREATE FUNC %p\n", func);
 	printk(KERN_INFO "DEBUG CREATE ID %d\n", str_fiber->id);
@@ -767,7 +767,7 @@ static struct Fiber* fib_create(void* func, void* parameters,void *stack_pointer
 			
 
 			struct pid_entry fibers_entry_log;
-			fibers_entry_log.name=kmalloc(sizeof(char)*16,GFP_KERNEL);
+			fibers_entry_log.name=kzalloc(sizeof(char)*16,GFP_KERNEL);
 			sprintf (fibers_entry_log.name, "f%lu", lista_fiber_elem->id);
 			fibers_entry_log.len=strlen(fibers_entry_log.name);
 			fibers_entry_log.mode=(S_IFREG|(S_IRUGO));
@@ -775,10 +775,12 @@ static struct Fiber* fib_create(void* func, void* parameters,void *stack_pointer
 			fibers_entry_log.fop = &fops_proc;
 			fiber_processo->fiber_stuff.fiber_base_stuff[i]=fibers_entry_log;
 			fiber_processo->fiber_stuff.len_fiber_stuff=i+1;
+			rcu_read_lock();
 			hash_add_rcu(fiber_processo->listafiber,&(lista_fiber_elem->node), lista_fiber_elem->id);
+			synchronize_rcu();	
+			rcu_read_unlock();
 
         }
-        synchronize_rcu();	
 
 	}
 	rcu_read_unlock();
@@ -792,9 +794,9 @@ static long fib_switch_to(pid_t id){
 
 	struct Fiber_Processi* fiber_processo;
 	struct Thread* lista_thread_iter;
-	struct Fiber* lista_fiber_iter_old;
 
 	struct Fiber* lista_fiber_iter_new;
+	struct Fiber* lista_fiber_iter_old;
 
 	struct timespec* time_str;
 	
@@ -812,45 +814,49 @@ static long fib_switch_to(pid_t id){
 		
 			if (lista_thread_iter->id == current->pid) {
 				if(lista_thread_iter->runner!=NULL){ 
-				spin_lock(&lista_thread_iter->runner->lock_fiber);
+				lista_fiber_iter_old=lista_thread_iter->runner;
+			
 
 				//Manipolazione stato macchina			
                 //Itera sulla lista fiber
 				//Cerca nuovo fiber
-				if(lista_thread_iter->runner->id == id){
+				if(lista_fiber_iter_old->id == id ){
 							
 					printk(KERN_INFO "DEBUG SWITCH PROBLEMI 4");
 					lista_fiber_iter_old->failed_counter += 1;
+
 					ret= -1;	//Problemi				
 				}else{
 
 					hash_for_each_possible_rcu(fiber_processo->listafiber, lista_fiber_iter_new, node, id){
 	
-						if (lista_fiber_iter_new->id == id) {
+						if (lista_fiber_iter_new->id == id && spin_trylock(&lista_fiber_iter_new->lock_fiber)==0) {
 							
-					//			spin_lock(&lista_fiber_iter_old->lock_fiber);
+								spin_lock(&lista_fiber_iter_old->lock_fiber);
 
 								//printk(KERN_INFO "DEBUG SWITCH IP 0 %p %d %d %d\n",current_pt_regs()->ip, current->pid,lista_fiber_iter_old->running, id);
 
 								//Salvataggio registri nel vecchio fiber
-
-								memcpy(lista_thread_iter->runner->regs,current_pt_regs(),sizeof(struct pt_regs));
+								memcpy(lista_fiber_iter_old->regs,current_pt_regs(),sizeof(struct pt_regs));
 
 								//FPU
 
-								fpu__save(lista_thread_iter->runner->fpu);
+								fpu__save(lista_fiber_iter_old->fpu);
+								lista_fiber_iter_old->selected_thread=NULL;
 
-				//				spin_lock(&lista_fiber_iter_new->lock_fiber);
+								spin_unlock(&lista_fiber_iter_old->lock_fiber);
+								if(lista_fiber_iter_new->regs==NULL){
+									printk(KERN_INFO "DEBUG SWITCHPRO\n");
 
-
+								}
 								memcpy(current_pt_regs(),lista_fiber_iter_new->regs,sizeof(struct pt_regs));
 
 								//FPU
 								//Manipolazione sistema interno
 								fpu__restore(lista_fiber_iter_new->fpu);
+								lista_fiber_iter_new->selected_thread=lista_thread_iter;
 
 								lista_thread_iter->runner=lista_fiber_iter_new;
-
 							
 								printk(KERN_INFO "DEBUG SWITCHOK\n");
 
@@ -866,8 +872,9 @@ static long fib_switch_to(pid_t id){
 				
 		      
 				}
-				spin_unlock(&lista_thread_iter->runner->lock_fiber);
-				synchronize_rcu();
+
+					//synchronize_rcu();
+
 					}
 			
 
@@ -877,6 +884,7 @@ static long fib_switch_to(pid_t id){
 	}
 	
 	rcu_read_unlock();
+
 	return ret;
 	/*	
 	time_str= kmalloc(sizeof(struct timespec),GFP_KERNEL);
@@ -918,28 +926,35 @@ static long flsAlloc(){
 				//printk(KERN_INFO "DEBUG FLSALLOCNUM %d\n",lista_fiber_iter->id);
 		
 				if (lista_thread_iter->id == current->pid) {
-					if(lista_thread_iter->runner!=NULL){
-					spin_lock(&lista_thread_iter->runner->lock_fiber);
+					if(lista_thread_iter->runner!=NULL && lista_thread_iter->runner->fls!=NULL){
 
-	
-						index = find_first_zero_bit(lista_thread_iter->runner->bitmap_fls, FLS_SIZE);
+				//	spin_lock(&lista_thread_iter->runner->lock_fiber);
+						int i;
+						for(i=0; i<FLS_SIZE; i++){
+							if(lista_thread_iter->runner->bitmap_fls[i]==0){
+								index=i;
+								break;
+							}
+						}
 						if (index < FLS_SIZE){
-	
-							change_bit(index, lista_thread_iter->runner->bitmap_fls);
+							lista_thread_iter->runner->bitmap_fls[index]=1;
 							//printk(KERN_INFO "DEBUG FLSALLOC %d\n",index);
+							printk(KERN_INFO "DEBUG FLSALLOC %d %d\n", index,lista_thread_iter->runner->id);
 		
 						}else{
 							
 							index=-1;
 						}
-						
+			//		spin_unlock(&lista_thread_iter->runner->lock_fiber);
+		//			synchronize_rcu();
+		
 					}
-					spin_unlock(&lista_thread_iter->runner->lock_fiber);
-					synchronize_rcu();
+				
 					}
 				}
 			}	
 		}
+
 	rcu_read_unlock();
 
 	return index;
@@ -967,27 +982,30 @@ static bool flsFree(long index){
 			hash_for_each_possible_rcu(fiber_processo->listathread, lista_thread_iter, node, current->pid){
 	
 				if (lista_thread_iter->id== current->pid) {
-					if(lista_thread_iter->runner!=NULL){
+					if(lista_thread_iter->runner!=NULL && lista_thread_iter->runner->fls!=NULL){
+							printk(KERN_INFO "DEBUG FLSFREE %d\n",lista_thread_iter->runner->id);
 
-					spin_lock(&lista_thread_iter->runner->lock_fiber);
+		//			spin_lock(&lista_thread_iter->runner->lock_fiber);
 	    
 						if (index < FLS_SIZE || index >= 0){
 
-							if(test_bit(index, lista_thread_iter->runner->bitmap_fls) != 0){
-        
-								change_bit(index, lista_thread_iter->runner->bitmap_fls);
+							if( lista_thread_iter->runner->bitmap_fls[index]!= 0){
+								lista_thread_iter->runner->bitmap_fls[index]=0;
 								ret=true;
 							}
 						}
 
-					spin_unlock(&lista_thread_iter->runner->lock_fiber);
-					synchronize_rcu();
+	//				spin_unlock(&lista_thread_iter->runner->lock_fiber);
+	//				synchronize_rcu();
+
 				}
 			}
 		}
 	}
 	}
+
 	rcu_read_unlock();
+
 	return ret;
 
 }
@@ -1012,13 +1030,14 @@ static long long flsGetValue(long pos){
 			hash_for_each_possible_rcu(fiber_processo->listathread, lista_thread_iter, node, current->pid){
 		
 				if (lista_thread_iter->id == current->pid) {
-					if(lista_thread_iter->runner!=NULL){
+					if(lista_thread_iter->runner!=NULL && lista_thread_iter->runner->fls!=NULL){
+					printk(KERN_INFO "DEBUG FLSGET %d\n",lista_thread_iter->runner->id);
 
-					spin_lock(&lista_thread_iter->runner->lock_fiber);
+//					spin_lock(&lista_thread_iter->runner->lock_fiber);
 
 						if (pos<FLS_SIZE || pos>=0) {
 					
-							if(test_bit(pos, lista_thread_iter->runner->bitmap_fls) != 0){
+							if(lista_thread_iter->runner->bitmap_fls[pos] != 0){
 								//printk(KERN_INFO "DEBUG FLSGET FINE, %ld %lli\n",pos,lista_fiber_iter->fls[pos]);
 
 								ret=lista_thread_iter->runner->fls[pos]; 
@@ -1028,15 +1047,16 @@ static long long flsGetValue(long pos){
 						
 
 					}
-					spin_unlock(&lista_thread_iter->runner->lock_fiber);
-				}
+					//spin_unlock(&lista_thread_iter->runner->lock_fiber);
 					//synchronize_rcu();
+				}
 
 				}
 			}
 		}
 	}
 	rcu_read_unlock();
+
 	return ret;
 
 }
@@ -1061,28 +1081,33 @@ static void flsSetValue(long pos, long long val){
 			hash_for_each_possible_rcu(fiber_processo->listathread, lista_thread_iter, node, current->pid){
 					
 				if (lista_thread_iter->id == current->pid) {
-						if(lista_thread_iter->runner!=NULL){
+						if(lista_thread_iter->runner!=NULL && lista_thread_iter->runner->fls!=NULL){
+						printk(KERN_INFO "DEBUG FLSSET %d\n",lista_thread_iter->runner->id);
 
-						spin_lock(&lista_thread_iter->runner->lock_fiber);
+						//spin_lock(&lista_thread_iter->runner->lock_fiber);
 						
 						if (pos<FLS_SIZE || pos>=0) {
 			
-							if(test_bit(pos, lista_thread_iter->runner->bitmap_fls) != 0){
+							if(lista_thread_iter->runner->bitmap_fls[pos] != 0){
 	
 								lista_thread_iter->runner->fls[pos]=val;
 			  
 							}		
 						}
 				
-					spin_unlock(&lista_thread_iter->runner->lock_fiber);
-					synchronize_rcu();
-				}	
+					//spin_unlock(&lista_thread_iter->runner->lock_fiber);
+//					synchronize_rcu();
 
+
+				}	
+				
 					}
 				}
 			}
 	}
+
 	rcu_read_unlock();
+
 	return;
 
 }
