@@ -236,7 +236,6 @@ void calqueue_init(calqueue *q) {
 }
 
 void calqueue_put(calqueue *q, double priority, void *payload) {
-	fprintf(stderr,"1c\n");
 
 	int i;
 	calqueue_node *new_node, *traverse;
@@ -246,17 +245,14 @@ void calqueue_put(calqueue *q, double priority, void *payload) {
 	new_node->priority = priority;
 	new_node->payload = payload;
 	new_node->next = NULL;
-	fprintf(stderr,"2c\n");
 
 
 	// Calculate the number of the bucket in which to place the new entry
 	i = (int)(priority / (double)q->cwidth); // Virtual bucket
 	i = i % q->nbuckets; // Actual bucket
-	fprintf(stderr,"3c\n");
 
 	// Grab the head of events list in bucket i
 	traverse = q->calendar[i];
-	fprintf(stderr,"4c\n");
 
 	// Put at the head of the list, if appropriate
 	if(traverse == NULL || traverse->priority > priority) {
@@ -271,7 +267,6 @@ void calqueue_put(calqueue *q, double priority, void *payload) {
 		new_node->next = traverse->next;
 		traverse->next = new_node;
 	}
-	fprintf(stderr,"5c\n");
 	
 	// Update queue size
 	q->qsize++;
@@ -280,8 +275,6 @@ void calqueue_put(calqueue *q, double priority, void *payload) {
 	if(q->qsize > q->top_threshold && q->nbuckets < MAXNBUCKETS) {
 		resize(q, 2 * q->nbuckets);
 	}
-	fprintf(stderr,"7c\n");
-
 }
 
 void *calqueue_get(calqueue *q) {
