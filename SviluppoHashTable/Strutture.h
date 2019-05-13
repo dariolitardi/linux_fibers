@@ -2,7 +2,7 @@
 #include <linux/hashtable.h>
 #include <linux/bitmap.h>
 
-#define FLS_SIZE 4096
+#define FLS_SIZE 16
 
 
 //Singola fiber
@@ -45,8 +45,8 @@ struct Thread {
 //Lista di gestori
 struct Fiber_Processi{
 	struct hlist_node node;
-	DECLARE_HASHTABLE(listathread, 10);
-    DECLARE_HASHTABLE(listafiber, 10);
+	DECLARE_HASHTABLE(listathread, 3);
+    DECLARE_HASHTABLE(listafiber, 9);
 
 	pid_t last_fib_id;
 

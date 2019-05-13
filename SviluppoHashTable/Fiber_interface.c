@@ -3,7 +3,7 @@
 
 __attribute__((constructor)) void fiber_init(){
 
-	IFACE_FIBER_DEV = open("/dev/" DEV_NAME, O_RDONLY);
+	IFACE_FIBER_DEV = open("/dev/" DEV_NAME, O_RDWR);
 
 	return;
 }
