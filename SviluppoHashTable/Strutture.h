@@ -2,7 +2,7 @@
 #include <linux/hashtable.h>
 #include <linux/bitmap.h>
 
-#define FLS_SIZE 16
+#define FLS_SIZE 128
 
 
 //Singola fiber

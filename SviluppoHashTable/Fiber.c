@@ -20,6 +20,7 @@
 #include <asm/fpu/internal.h>
 #include <linux/slab.h>
 #include "Strutture.h"
+#include "Ioctl_interface.h"
 #include <linux/module.h>
 #include <linux/smp.h>
 #include <linux/moduleparam.h>
@@ -51,20 +52,11 @@
 
 #define DEV_NAME "fib_device"
 
-#define IOCTL_MAGIC 'f'
-
-#define FIB_FLS_ALLOC _IOR(IOCTL_MAGIC, 10, struct fiber_arguments)
-#define FIB_FLS_GET	_IOWR(IOCTL_MAGIC, 2, struct fiber_arguments)
-#define FIB_FLS_SET _IOW(IOCTL_MAGIC, 3, struct fiber_arguments)
-#define FIB_FLS_DEALLOC	_IOW(IOCTL_MAGIC, 4, struct fiber_arguments)
-#define FIB_CONVERT	_IO(IOCTL_MAGIC, 5)
-#define FIB_CREATE _IOWR(IOCTL_MAGIC, 6, struct fiber_arguments)
-#define FIB_SWITCH_TO _IOW(IOCTL_MAGIC, 7, struct fiber_arguments)
 
 
 #define FIB_LOG_LEN 1024
 
-#define FLS_SIZE 16
+#define FLS_SIZE 128
 
 DEFINE_HASHTABLE(processi, 3);
 
@@ -348,7 +340,7 @@ static struct kprobe kp_exit;
 
 //Aggiungere i lock
 static int fib_open(struct inode *inode, struct file *file){
-	printk(KERN_INFO "DEBUG OPEN\n");
+	//printk(KERN_INFO "DEBUG OPEN\n");
 		
 	
 	
@@ -378,7 +370,7 @@ static int fib_open(struct inode *inode, struct file *file){
 }
 
 static int fib_release(struct inode *inode, struct file *file){
-	printk(KERN_INFO "DEBUG RELEASE\n");
+	//printk(KERN_INFO "DEBUG RELEASE\n");
 	//Rilasciare processo da struttura
 	int i;
 	int j;
@@ -448,7 +440,7 @@ static int fib_release(struct inode *inode, struct file *file){
 	rcu_read_unlock();
 	
 
-	printk(KERN_INFO "DEBUG RELEASEOK\n");
+	//printk(KERN_INFO "DEBUG RELEASEOK\n");
 	
 
 	return 0;
@@ -672,7 +664,7 @@ static pid_t fib_convert(){
 				lista_fiber_elem = do_fib_create((void*)my_regs->ip,0,0,-1,fiber_processo,0);
 
 				//Manipolazione stato macchina
-				printk(KERN_INFO "DEBUG CONVERT IP %p\n",my_regs->ip);
+				//printk(KERN_INFO "DEBUG CONVERT IP %p\n",my_regs->ip);
 				
 			
 				time_str = kzalloc(sizeof(struct timespec),GFP_KERNEL);
@@ -698,7 +690,7 @@ static pid_t fib_convert(){
 }
 static struct Thread* do_thread_create(struct Fiber_Processi* str_processo, pid_t id){
 	
-	printk(KERN_INFO "DEBUG DOTHREADCREATE\n");
+	//printk(KERN_INFO "DEBUG DOTHREADCREATE\n");
 	struct Thread* str_thread =kzalloc(sizeof(struct Thread),GFP_KERNEL);
 	str_thread->id=id;
 	str_thread->runner=NULL;
@@ -711,7 +703,7 @@ static struct Thread* do_thread_create(struct Fiber_Processi* str_processo, pid_
 }
 
 static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_pointer, unsigned long stack_size,struct Fiber_Processi* str_processo,int flag){
-	printk(KERN_INFO "DEBUG DOFIBCREATE\n");
+	//printk(KERN_INFO "DEBUG DOFIBCREATE\n");
 
 	
 	pid_t pid = current->tgid;
@@ -758,7 +750,7 @@ static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_poin
 	str_fiber->bitmap_fls= kzalloc(sizeof(unsigned long)*FLS_SIZE,GFP_KERNEL);
 
 	//printk(KERN_INFO "DEBUG CREATE FUNC %p\n", func);
-	printk(KERN_INFO "DEBUG CREATE ID %d\n", str_fiber->id);
+	//printk(KERN_INFO "DEBUG CREATE ID %d\n", str_fiber->id);
 
 
 	
@@ -937,7 +929,7 @@ static long flsAlloc(){
 	struct Thread* lista_thread_iter;
 
 	long index=-1;
-	printk(KERN_INFO "DEBUG FLSALLOC\n");
+	//printk(KERN_INFO "DEBUG FLSALLOC\n");
 	int i;
 
 
@@ -995,7 +987,7 @@ static bool flsFree(long index){
 	struct Fiber_Processi* fiber_processo;
 	struct Fiber* running_fiber;
 	struct Thread* lista_thread_iter;
-	printk(KERN_INFO "DEBUG FLSFREE \n");
+	//printk(KERN_INFO "DEBUG FLSFREE \n");
 	bool ret=false;
 	
 	//Itera sulla lista processi
@@ -1048,7 +1040,7 @@ static long long flsGetValue(long pos){
 	
 	struct Fiber_Processi* fiber_processo;
 	struct Thread* lista_thread_iter;
-	printk(KERN_INFO "DEBUG FLSGET \n");
+	//printk(KERN_INFO "DEBUG FLSGET \n");
 
 	long long ret=-1;
 	//Itera sulla lista processi
@@ -1103,7 +1095,7 @@ static void flsSetValue(long pos, long long val){
 	
 	struct Fiber_Processi* fiber_processo;
 	struct Thread* lista_thread_iter;
-	printk(KERN_INFO "DEBUG FLSSET\n");
+	//printk(KERN_INFO "DEBUG FLSSET\n");
 
 	//Itera sulla lista processi
 	//Cerca processo corrente
@@ -1199,7 +1191,6 @@ static int fib_driver_init(void){
 	printk(KERN_INFO "Device Driver Insert...Done!!!\n");
 	
 	
-	/*
 	
 	//Register Proc kprobe
 	kp_readdir.pre_handler = Pre_Handler_Readdir; 
@@ -1211,7 +1202,7 @@ static int fib_driver_init(void){
     kp_lookup.post_handler = Post_Handler_Lookup; 
     kp_lookup.symbol_name = "proc_pident_lookup"; 
     register_kprobe(&kp_lookup);
-    
+    /*
     kp_exit.pre_handler = Pre_Handler_Exit; 
     kp_exit.symbol_name = "do_exit";
     register_kprobe(&kp_exit);
