@@ -359,21 +359,18 @@ static int fib_open(struct inode *inode, struct file *file){
 	//processo->lock_fiber = __SPIN_LOCK_UNLOCKED(processo->lock_fiber);   
 
 	processo->id = current->tgid;	//Current è globale
-	int n_fib=10;
-	int size=sizeof(struct pid_entry)*(n_fib);
+	int n_fib=1000;
 	
 	processo->last_fib_id=0;
-	processo->fiber_stuff.fiber_base_stuff=kzalloc(size,GFP_KERNEL);
+	processo->fiber_stuff.fiber_base_stuff=kzalloc(sizeof(struct pid_entry)*(n_fib),GFP_KERNEL);
 	processo->fiber_stuff.len_fiber_stuff=0;
-	 
 	hash_init(processo->listafiber);   
 	hash_init(processo->listathread);   
 
+	rcu_read_lock();
 
 	//Inserimento in lista
-	rcu_read_lock();
     hash_add_rcu(processi, &(processo->node), processo->id);  
-	synchronize_rcu();	
 	rcu_read_unlock();
 
 
@@ -641,11 +638,13 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 
 //Funzioni ausiliarie
 static pid_t fib_convert(){
+
 	struct Fiber_Processi* fiber_processo;
 	struct Thread* lista_thread_iter;
 	struct Thread* lista_thread_elem;
 	struct Fiber* lista_fiber_elem;
 	struct timespec* time_str;
+	struct pt_regs* my_regs;
 	int i;
 	pid_t ret=-1;
 	int flag_controllo=0;
@@ -660,53 +659,51 @@ static pid_t fib_convert(){
 			hash_for_each_possible_rcu(fiber_processo->listathread, lista_thread_iter, node, current->pid){
 				if (lista_thread_iter->id == current->pid) {
 					flag_controllo=1;
+					break;
 				}
 
 			}
 			if(flag_controllo==0){
+				
 				//Crea nuovo fiber
 				int stack_size=1;
-				struct pt_regs* my_regs = current_pt_regs();
-				lista_thread_elem=do_thread_create(fiber_processo, current->pid);
-
+				my_regs = current_pt_regs();
+				lista_thread_elem = do_thread_create(fiber_processo, current->pid);
 				lista_fiber_elem = do_fib_create((void*)my_regs->ip,0,0,-1,fiber_processo,0);
-				//spin_lock(&lista_fiber_elem->lock_fiber);
 
 				//Manipolazione stato macchina
 				printk(KERN_INFO "DEBUG CONVERT IP %p\n",my_regs->ip);
 				
 			
-				time_str= kzalloc(sizeof(struct timespec),GFP_KERNEL);
+				time_str = kzalloc(sizeof(struct timespec),GFP_KERNEL);
 				getnstimeofday(time_str);
-				lista_fiber_elem->last_activation_time=time_str->tv_nsec;
-				lista_fiber_elem->correct_counter=1;
-				lista_fiber_elem->selected_thread=lista_thread_elem;
+				lista_fiber_elem->last_activation_time = time_str->tv_nsec;
+				lista_fiber_elem->correct_counter = 1;
+				lista_fiber_elem->selected_thread = lista_thread_elem;
 				kfree(time_str);
-				ret=lista_fiber_elem->id;
-				lista_thread_elem->runner=lista_fiber_elem;
+				ret = lista_fiber_elem->id;
+				lista_thread_elem->runner = lista_fiber_elem;
+
 				//Collega entry in lista
 				hash_add_rcu(fiber_processo->listafiber,&(lista_fiber_elem->node), lista_fiber_elem->id);
-				//spin_unlock(&lista_fiber_elem->lock_fiber);
-				//synchronize_rcu();	
 
+	
+				}
 			}
-
-		}
 	}
 	rcu_read_unlock();
-	
 	
 	return 	ret;
 	
 }
 static struct Thread* do_thread_create(struct Fiber_Processi* str_processo, pid_t id){
-	struct Thread* str_thread;
-	str_thread =kzalloc(sizeof(struct Thread),GFP_KERNEL);
+	
+	printk(KERN_INFO "DEBUG DOTHREADCREATE\n");
+	struct Thread* str_thread =kzalloc(sizeof(struct Thread),GFP_KERNEL);
 	str_thread->id=id;
 	str_thread->runner=NULL;
 	rcu_read_lock();
 	hash_add_rcu(str_processo->listathread,&(str_thread->node), str_thread->id);
-	synchronize_rcu();	
 	rcu_read_unlock();
 
 	return str_thread;
@@ -714,17 +711,18 @@ static struct Thread* do_thread_create(struct Fiber_Processi* str_processo, pid_
 }
 
 static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_pointer, unsigned long stack_size,struct Fiber_Processi* str_processo,int flag){
+	printk(KERN_INFO "DEBUG DOFIBCREATE\n");
 
 	
 	pid_t pid = current->tgid;
 	pid_t tid = current->pid;
-	struct Fiber* str_fiber;
+	
 
 
 	
 	//Crea Fiber str
 
-	str_fiber =kzalloc(sizeof(struct Fiber),GFP_KERNEL);
+	struct Fiber* str_fiber =kzalloc(sizeof(struct Fiber),GFP_KERNEL);
 	str_fiber->lock_fiber = __SPIN_LOCK_UNLOCKED(lock_fiber);   
    	//spin_lock(&str_fiber->lock_fiber);
    	
@@ -756,7 +754,6 @@ static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_poin
 	str_fiber->failed_counter =0;
 	str_fiber->exec_time = 0;
 	str_fiber->last_activation_time = 0;
-	str_fiber->selected_thread=NULL;
 	str_fiber->fls= kzalloc(sizeof(long long)*FLS_SIZE,GFP_KERNEL);
 	str_fiber->bitmap_fls= kzalloc(sizeof(unsigned long)*FLS_SIZE,GFP_KERNEL);
 
@@ -775,21 +772,22 @@ static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_poin
 static struct Fiber* fib_create(void* func, void* parameters,void *stack_pointer, unsigned long stack_size){
 	struct Fiber_Processi* fiber_processo;
 	struct Fiber* lista_fiber_elem;
+	struct pid_entry fibers_entry_log;
 
-
+	int i;
 	//Itera sulla lista processi
 	//Cerca processo corrente
 	rcu_read_lock();
 	hash_for_each_possible_rcu(processi, fiber_processo, node,  current->tgid){
         if (fiber_processo->id == current->tgid) {
            //Crea Fiber str
-			int i=fiber_processo->fiber_stuff.len_fiber_stuff;
+			i=fiber_processo->fiber_stuff.len_fiber_stuff;
 
 			lista_fiber_elem=do_fib_create(func, parameters, stack_pointer, stack_size,fiber_processo,1);
 			
+			lista_fiber_elem->selected_thread=NULL;
 
-			struct pid_entry fibers_entry_log;
-			fibers_entry_log.name=kzalloc(sizeof(char)*16,GFP_KERNEL);
+			fibers_entry_log.name=kmalloc(sizeof(char)*16,GFP_KERNEL);
 			sprintf (fibers_entry_log.name, "f%lu", lista_fiber_elem->id);
 			fibers_entry_log.len=strlen(fibers_entry_log.name);
 			fibers_entry_log.mode=(S_IFREG|(S_IRUGO));
@@ -798,7 +796,6 @@ static struct Fiber* fib_create(void* func, void* parameters,void *stack_pointer
 			fiber_processo->fiber_stuff.fiber_base_stuff[i]=fibers_entry_log;
 			fiber_processo->fiber_stuff.len_fiber_stuff=i+1;
 			hash_add_rcu(fiber_processo->listafiber,&(lista_fiber_elem->node), lista_fiber_elem->id);
-			synchronize_rcu();	
 
         }
 
@@ -807,8 +804,6 @@ static struct Fiber* fib_create(void* func, void* parameters,void *stack_pointer
 
 	return lista_fiber_elem; //Controllo
 
-	
-	
 }
 static long fib_switch_to(pid_t id){
 

@@ -37,7 +37,6 @@ struct Thread {
         pid_t id; 
         struct hlist_node node;
         struct Fiber *runner;
-        struct Fiber_Processi *parent_process;
 
 };
 
