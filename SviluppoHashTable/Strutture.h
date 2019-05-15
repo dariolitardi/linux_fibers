@@ -44,8 +44,8 @@ struct Thread {
 //Lista di gestori
 struct Fiber_Processi{
 	struct hlist_node node;
-	DECLARE_HASHTABLE(listathread, 3);
-    DECLARE_HASHTABLE(listafiber, 9);
+	DECLARE_HASHTABLE(listathread, 10);
+    DECLARE_HASHTABLE(listafiber, 10);
 
 	pid_t last_fib_id;
 

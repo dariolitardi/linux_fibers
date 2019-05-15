@@ -58,7 +58,7 @@
 
 #define FLS_SIZE 128
 
-DEFINE_HASHTABLE(processi, 3);
+DEFINE_HASHTABLE(processi, 10);
 
 dev_t dev = 0;
 static struct class *dev_class;
@@ -93,6 +93,7 @@ static struct file_operations fops = {
 };
 
 static struct file_operations fops_proc = {
+	.owner			= THIS_MODULE,
 	.read 			= myread,
 };
 
@@ -114,6 +115,7 @@ int Pre_Handler_Readdir(struct kprobe *p, struct pt_regs *regs){
 	struct Fiber_Processi* fiber_processo;
 	kstrtol(file->f_path.dentry->d_parent->d_name.name,10, &parent);
 	id=(pid_t)parent;
+	int n_fibers;
 
 	printk(KERN_INFO "DEBUG PREREADDIR\n");
 	printk(KERN_INFO "DEBUG PREREADDIR ID %d\n",id);
@@ -126,23 +128,22 @@ int Pre_Handler_Readdir(struct kprobe *p, struct pt_regs *regs){
 		hash_for_each_possible_rcu(processi, fiber_processo, node, id){
 		
 			if (fiber_processo->id == id) {
-				if(fiber_processo->fiber_stuff.len_fiber_stuff==0){
-					regs->cx=(unsigned long) fiber_processo->fiber_stuff.len_fiber_stuff;
-
-				}else{
+			
+				n_fibers=fiber_processo->fiber_stuff.len_fiber_stuff;
 		
 				printk(KERN_INFO "DEBUG PREREADIR 0\n");
 
 				regs->dx=(unsigned long) fiber_processo->fiber_stuff.fiber_base_stuff;
 				regs->cx=(unsigned long) fiber_processo->fiber_stuff.len_fiber_stuff;
-				}
+				
+				
 			}
 		}
 		 rcu_read_unlock();
-		
-		
-		
-		
+		if(n_fibers==0){
+					regs->cx=(unsigned long) n_fibers;
+
+		}
 	
 	
 	}else /*if(lista_processi_iter->counter_proc_read==0)*/{
@@ -211,7 +212,7 @@ int Pre_Handler_Lookup(struct kprobe *p, struct pt_regs *regs){
 	printk(KERN_INFO "DEBUG PRELOOKUP\n");
 	printk(KERN_INFO "DEBUG PRELOOKUP ID %d\n",id);
 
-
+	int n_fibers;
 	if(strcmp(dentry->d_name.name,"fibers")==0){
 	
 		//Itera sulla lista processi
@@ -220,21 +221,21 @@ int Pre_Handler_Lookup(struct kprobe *p, struct pt_regs *regs){
 		hash_for_each_possible_rcu(processi, fiber_processo, node, id){
 		
 			if (fiber_processo->id == id) {
-				if(fiber_processo->fiber_stuff.len_fiber_stuff==0){
-					regs->cx=(unsigned long) fiber_processo->fiber_stuff.len_fiber_stuff;
-
-				}else{
+					n_fibers=fiber_processo->fiber_stuff.len_fiber_stuff;
 
 		
 					printk(KERN_INFO "DEBUG PRELOOKUP 0\n");
 		
 					regs->dx=(unsigned long) fiber_processo->fiber_stuff.fiber_base_stuff;
 					regs->cx=(unsigned long) fiber_processo->fiber_stuff.len_fiber_stuff;
-				}
+				
 			}
 			}	
 		 rcu_read_unlock();
-	
+			if(n_fibers==0){
+					regs->cx=(unsigned long) n_fibers;
+
+			}
 	
 	}else /*if(lista_processi_iter->counter_proc_look==0)*/{
 		
@@ -463,7 +464,7 @@ static ssize_t myread(struct file *filp, char __user *buf, size_t len, loff_t *o
 	
 	kstrtoul(filp->f_path.dentry->d_name.name+1,10, &fib_id);
 	kstrtol(filp->f_path.dentry->d_parent->d_parent->d_name.name,10, &tmp_pid);
-	pid=tmp_pid;
+	pid=(pid_t)tmp_pid;
 	printk(KERN_INFO "DEBUG READFILE parent %s\n",filp->f_path.dentry->d_name.name);
 
 	//Itera sulla lista processi
@@ -472,33 +473,42 @@ static ssize_t myread(struct file *filp, char __user *buf, size_t len, loff_t *o
 	hash_for_each_possible_rcu(processi, fiber_processo, node, pid){
 		
         if (fiber_processo->id == pid) {
-			hash_for_each_possible_rcu(fiber_processo->listathread, lista_thread_iter, node, current->pid){
-				if (lista_thread_iter->id == current->pid) {
-					char* running_str;
-
-					if (lista_thread_iter->runner!=NULL){
-						running_str = "";
-					} else {
-						running_str = "not ";
-					}
+			
+				
 					hash_for_each_possible_rcu(fiber_processo->listafiber, lista_fiber_iter, node, fib_id){
 							if (lista_fiber_iter->id == fib_id) {
+								spin_lock(&lista_fiber_iter->lock_fiber);
+
+								char* running_str;
+
+								if (lista_fiber_iter->selected_thread==NULL){
+									running_str = "not ";
+								} else {
+									running_str = "";
+
+								}
 								sprintf(fiber_stat,"##FIBER STATISTICS##\n\n - This fiber is currently %srunning.\n - The initial entry point is: %p\n - This fiber was created by: %lu (pid)\n - Succesful activations: %lu\n - Unsuccesful activations: %lu\n - Total running time: %lu msec\n\0",running_str,lista_fiber_iter->entry_point,lista_fiber_iter->creator,lista_fiber_iter->correct_counter,lista_fiber_iter->failed_counter,lista_fiber_iter->exec_time/1000);
 
 								if (*off < strnlen(fiber_stat, FIB_LOG_LEN)){
 			
 									i = min_t(size_t, len, strnlen(fiber_stat, FIB_LOG_LEN));
-									if (copy_to_user(buf, fiber_stat, i)==0) {
-										
-										*off += i;
+									if (copy_to_user(buf, fiber_stat, i)) {
+											
+											spin_unlock(&lista_fiber_iter->lock_fiber);
+											rcu_read_unlock();
+
+											return -EFAULT;
 									}
+									*off += i;
+
 								}
+								spin_unlock(&lista_fiber_iter->lock_fiber);
+
 							}
-				}
+				
 		}
 		
         }
-	}
 	}
 	 rcu_read_unlock();
 	
@@ -636,8 +646,7 @@ static pid_t fib_convert(){
 	struct Thread* lista_thread_elem;
 	struct Fiber* lista_fiber_elem;
 	struct timespec* time_str;
-	struct pt_regs* my_regs;
-	int i;
+	
 	pid_t ret=-1;
 	int flag_controllo=0;
 	//Itera sulla lista processi
@@ -651,7 +660,6 @@ static pid_t fib_convert(){
 			hash_for_each_possible_rcu(fiber_processo->listathread, lista_thread_iter, node, current->pid){
 				if (lista_thread_iter->id == current->pid) {
 					flag_controllo=1;
-					break;
 				}
 
 			}
@@ -659,7 +667,7 @@ static pid_t fib_convert(){
 				
 				//Crea nuovo fiber
 				int stack_size=1;
-				my_regs = current_pt_regs();
+				struct pt_regs* my_regs = current_pt_regs();
 				lista_thread_elem = do_thread_create(fiber_processo, current->pid);
 				lista_fiber_elem = do_fib_create((void*)my_regs->ip,0,0,-1,fiber_processo,0);
 
@@ -748,7 +756,19 @@ static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_poin
 	str_fiber->last_activation_time = 0;
 	str_fiber->fls= kzalloc(sizeof(long long)*FLS_SIZE,GFP_KERNEL);
 	str_fiber->bitmap_fls= kzalloc(sizeof(unsigned long)*FLS_SIZE,GFP_KERNEL);
+	
+	int i=str_processo->fiber_stuff.len_fiber_stuff;
 
+	struct pid_entry fibers_entry_log;
+
+	fibers_entry_log.name=kzalloc(sizeof(char)*16,GFP_KERNEL);
+	sprintf (fibers_entry_log.name, "f%d", str_fiber->id);
+	fibers_entry_log.len=strlen(fibers_entry_log.name);
+	fibers_entry_log.mode=(S_IFREG|(S_IRUGO));
+	fibers_entry_log.iop = NULL;
+	fibers_entry_log.fop = &fops_proc;
+	str_processo->fiber_stuff.fiber_base_stuff[i]=fibers_entry_log;
+	str_processo->fiber_stuff.len_fiber_stuff=i+1;
 	//printk(KERN_INFO "DEBUG CREATE FUNC %p\n", func);
 	//printk(KERN_INFO "DEBUG CREATE ID %d\n", str_fiber->id);
 
@@ -764,29 +784,18 @@ static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_poin
 static struct Fiber* fib_create(void* func, void* parameters,void *stack_pointer, unsigned long stack_size){
 	struct Fiber_Processi* fiber_processo;
 	struct Fiber* lista_fiber_elem;
-	struct pid_entry fibers_entry_log;
 
-	int i;
 	//Itera sulla lista processi
 	//Cerca processo corrente
 	rcu_read_lock();
 	hash_for_each_possible_rcu(processi, fiber_processo, node,  current->tgid){
         if (fiber_processo->id == current->tgid) {
            //Crea Fiber str
-			i=fiber_processo->fiber_stuff.len_fiber_stuff;
 
 			lista_fiber_elem=do_fib_create(func, parameters, stack_pointer, stack_size,fiber_processo,1);
 			
 			lista_fiber_elem->selected_thread=NULL;
-
-			fibers_entry_log.name=kmalloc(sizeof(char)*16,GFP_KERNEL);
-			sprintf (fibers_entry_log.name, "f%lu", lista_fiber_elem->id);
-			fibers_entry_log.len=strlen(fibers_entry_log.name);
-			fibers_entry_log.mode=(S_IFREG|(S_IRUGO));
-			fibers_entry_log.iop = NULL;
-			fibers_entry_log.fop = &fops_proc;
-			fiber_processo->fiber_stuff.fiber_base_stuff[i]=fibers_entry_log;
-			fiber_processo->fiber_stuff.len_fiber_stuff=i+1;
+			
 			hash_add_rcu(fiber_processo->listafiber,&(lista_fiber_elem->node), lista_fiber_elem->id);
 
         }
@@ -879,6 +888,14 @@ static long fib_switch_to(pid_t id){
 								//printk(KERN_INFO "DEBUG SWITCHOK\n");
 
 
+								time_str= kzalloc(sizeof(struct timespec),GFP_KERNEL);
+								getnstimeofday(time_str);
+	
+								lista_fiber_iter_new->correct_counter += 1;
+								lista_fiber_iter_new->last_activation_time =time_str->tv_nsec;
+								lista_fiber_iter_old->exec_time += ((lista_fiber_iter_new->last_activation_time)-(lista_fiber_iter_old->last_activation_time));
+	
+								kfree(time_str);
 								ret=0;
 							}
 							spin_unlock(&lista_fiber_iter_new->lock_fiber);
@@ -907,15 +924,7 @@ static long fib_switch_to(pid_t id){
 	rcu_read_unlock();
 
 	return ret;
-	/*	
-	time_str= kmalloc(sizeof(struct timespec),GFP_KERNEL);
-	getnstimeofday(time_str);
 	
-	lista_fiber_iter_new->correct_counter += 1;
-	lista_fiber_iter_new->last_activation_time =time_str->tv_nsec;
-	lista_fiber_iter_old->exec_time += ((lista_fiber_iter_new->last_activation_time)-(lista_fiber_iter_old->last_activation_time));
-	
-	kfree(time_str);*/
 	
 }      
 
