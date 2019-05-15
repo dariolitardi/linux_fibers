@@ -1148,7 +1148,7 @@ static void flsSetValue(long pos, long long val){
 static char *fiber_devnode(struct device *dev, umode_t *mode)
 {
         if (mode)
-                *mode = 0666;
+                *mode = 0766;
         return kasprintf(GFP_KERNEL, "%s", dev_name(dev));
 }
 
