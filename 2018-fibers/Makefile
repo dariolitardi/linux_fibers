@@ -6,7 +6,7 @@ SRC = 	src/calqueue.c \
 		src/numerical.c \
 		src/thread.c \
 		src/ult.c \
-		../SviluppoHashTable/Fiber_interface.c
+		../SviluppoHashTable/Fiber_library/Fiber_interface.c
 		
 CFLAGS = -O3
 EXEC = test

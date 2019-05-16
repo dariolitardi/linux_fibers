@@ -109,6 +109,8 @@ static void main_loop(void *args) {
 	puts("All fibers are done!");
 	printf("Time to initialize fibers: %f\n", (double)init_millis / 1000);
 	printf("Time to run do the work (per-fiber): %f\n", (double)exec_millis / 1000 / num_fibers);
+	printf("PID: %d\n",getpid());
+	while(1);
 	exit(EXIT_SUCCESS);
 	
 }
