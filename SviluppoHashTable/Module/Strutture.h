@@ -13,20 +13,14 @@ struct Fiber{
 	void* entry_point;
 	struct Thread* selected_thread;
     spinlock_t lock_fiber;
-
 	long long* fls;
-	unsigned long flags;
-
-	unsigned long *bitmap_fls;
-    
+	unsigned long *bitmap_fls;    
 	unsigned long exec_time;
 	unsigned long last_activation_time;
-
 	unsigned long correct_counter;
 	pid_t creator;
 	pid_t id;
 	int failed_counter;
-	
 };
 
 
@@ -40,26 +34,16 @@ struct Thread {
         struct Fiber *runner;
         pid_t id; 
 
-
 };
 
-
-//Lista di gestori
-struct Fiber_Processi{
+//Process
+struct Process{
 	struct hlist_node node;
 	DECLARE_HASHTABLE(listathread, 10);
     DECLARE_HASHTABLE(listafiber, 10);
-
-
-	spinlock_t lock_fiber;
-
 	struct Fiber_Stuff fiber_stuff;
 	pid_t last_fib_id;
 	pid_t id;
-
-	unsigned int counter_proc_look;
-	unsigned int counter_proc_read;
-	
 };
 
 //

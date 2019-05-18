@@ -75,8 +75,8 @@ static char *fiber_devnode(struct device *dev, umode_t *mode);
 
 
 static pid_t fib_convert(void);
-static struct Thread* do_thread_create(struct Fiber_Processi* str_processo, pid_t id);
-static struct Fiber* do_fib_create(void* func, void* parameters,void *stack_pointer, unsigned long stack_size,struct Fiber_Processi* str_processo, int flag);
+static struct Thread* do_thread_create(struct Process* str_processo, pid_t id);
+static struct Fiber* do_fib_create(void* func, void* parameters,void *stack_pointer, unsigned long stack_size,struct Process* str_processo, int flag);
 static struct Fiber* fib_create(void* func, void* parameters,void *stack_pointer, unsigned long stack_size);
 static long fib_switch_to(pid_t id);
 
@@ -112,7 +112,6 @@ int Pre_Handler_Readdir(struct kprobe *p, struct pt_regs *regs){
 	struct inode *inode;
 	long parent;
 	pid_t id;
-	struct Fiber_Processi* fiber_processo;
 	kstrtol(file->f_path.dentry->d_parent->d_name.name,10, &parent);
 	id=(pid_t)parent;
 	int n_fibers;
@@ -121,6 +120,7 @@ int Pre_Handler_Readdir(struct kprobe *p, struct pt_regs *regs){
 	//printk(KERN_INFO "DEBUG PREREADDIR ID %d\n",id);
 
 	if(strcmp(file->f_path.dentry->d_name.name,"fibers")==0){
+		struct Process* fiber_processo;
 	
 		//Itera sulla lista processi
 		//Cerca processo corrente
@@ -146,11 +146,19 @@ int Pre_Handler_Readdir(struct kprobe *p, struct pt_regs *regs){
 		}
 	
 	
-	}else /*if(lista_processi_iter->counter_proc_read==0)*/{
+	}else {
 	
+	struct Process* fiber_processo;
+	long myid;
+	pid_t id_proc;
+	kstrtol(file->f_path.dentry->d_name.name,10, &myid);
+	id_proc=(pid_t)myid;
+	rcu_read_lock();
+	hash_for_each_possible_rcu(processi, fiber_processo, node,  id_proc){
+        if (fiber_processo->id == id_proc) {
 		tgid_base_stuff = regs->dx;
 		
-		//printk(KERN_INFO "DEBUG PREREADIR 1\n");
+		printk(KERN_INFO "DEBUG PREREADIR 1\n");
 
 		n = (unsigned int) regs->cx;
 		struct pid_entry fibers_entry;
@@ -179,7 +187,10 @@ int Pre_Handler_Readdir(struct kprobe *p, struct pt_regs *regs){
 
 		//lista_processi_iter->counter_proc_read=1;
 	}
-
+	}
+	rcu_read_unlock();
+	
+	}
 	return 0;
 
 } 
@@ -204,7 +215,6 @@ int Pre_Handler_Lookup(struct kprobe *p, struct pt_regs *regs){
 	struct dentry *dentry= (void *) regs->si;
 	long parent;
 	pid_t id;
-	struct Fiber_Processi* fiber_processo;
 	
 	kstrtol(dentry->d_parent->d_name.name,10, &parent);
 	id=(pid_t)parent;
@@ -214,6 +224,7 @@ int Pre_Handler_Lookup(struct kprobe *p, struct pt_regs *regs){
 
 	int n_fibers;
 	if(strcmp(dentry->d_name.name,"fibers")==0){
+	struct Process* fiber_processo;
 	
 		//Itera sulla lista processi
 		//Cerca processo corrente
@@ -237,11 +248,18 @@ int Pre_Handler_Lookup(struct kprobe *p, struct pt_regs *regs){
 
 			}
 	
-	}else /*if(lista_processi_iter->counter_proc_look==0)*/{
-		
+	}else{
+	struct Process* fiber_processo;
+	long myid;
+	pid_t id_proc;
+	kstrtol(dentry->d_name.name,10, &myid);
+	id_proc=(pid_t)myid;
+	rcu_read_lock();
+	hash_for_each_possible_rcu(processi, fiber_processo, node,  id_proc){
+        if (fiber_processo->id == id_proc) {
 		tgid_base_stuff = regs->dx;
 	
-		//printk(KERN_INFO "DEBUG PRELOOKUP 1\n");
+		printk(KERN_INFO "DEBUG PRELOOKUP 1\n");
 
 	n= (unsigned int) regs->cx;
 	struct pid_entry fibers_entry;
@@ -267,6 +285,9 @@ int Pre_Handler_Lookup(struct kprobe *p, struct pt_regs *regs){
 	regs->cx=(unsigned long) n+1;
 	//lista_processi_iter->counter_proc_look=1;
 	}
+	}
+	rcu_read_unlock();
+	}
 
 	return 0;
 
@@ -285,7 +306,7 @@ void Post_Handler_Lookup(struct kprobe *p, struct pt_regs *regs, unsigned long f
 
 int Pre_Handler_Exit(struct kprobe *p, struct pt_regs *regs){ 
 
-	struct Fiber_Processi* fiber_processo;
+	struct Process* fiber_processo;
 	struct Thread* lista_thread_iter;
 	struct Fiber* lista_fiber_iter;
 
@@ -365,7 +386,7 @@ static int fib_open(struct inode *inode, struct file *file){
 
 	//Registrare processo in struttura
 	//Creare gestore fiber per il processo
-	struct Fiber_Processi* processo = (struct Fiber_Processi*) kzalloc(sizeof(struct Fiber_Processi),GFP_KERNEL);
+	struct Process* processo = (struct Process*) kzalloc(sizeof(struct Process),GFP_KERNEL);
 	//processo->lock_fiber = __SPIN_LOCK_UNLOCKED(processo->lock_fiber);   
 
 	processo->id = current->tgid;	//Current è globale
@@ -388,7 +409,7 @@ static int fib_open(struct inode *inode, struct file *file){
 }
 
 static int fib_release(struct inode *inode, struct file *file){
-	//printk(KERN_INFO "DEBUG RELEASE\n");
+	printk(KERN_INFO "DEBUG RELEASE\n");
 	//Rilasciare processo da struttura
 	int i;
 	int j;
@@ -396,7 +417,7 @@ static int fib_release(struct inode *inode, struct file *file){
 
 	//Rimozione da lista
 
-	struct Fiber_Processi* bersaglio;
+	struct Process* bersaglio;
 	struct Thread* bersaglio_thread;
 
 	struct Fiber* bersaglio_fiber;
@@ -469,7 +490,7 @@ static ssize_t myread(struct file *filp, char __user *buf, size_t len, loff_t *o
 	pid_t pid;
 	long tmp_pid;
 	unsigned long fib_id;
-	struct Fiber_Processi* fiber_processo;
+	struct Process* fiber_processo;
 	struct Thread* lista_thread_iter;
 	struct Fiber* lista_fiber_iter;
 	size_t i=-1;
@@ -658,7 +679,7 @@ static long fib_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 //Funzioni ausiliarie
 static pid_t fib_convert(){
 
-	struct Fiber_Processi* fiber_processo;
+	struct Process* fiber_processo;
 	struct Thread* lista_thread_iter;
 	struct Thread* lista_thread_elem;
 	struct Fiber* lista_fiber_elem;
@@ -713,7 +734,7 @@ static pid_t fib_convert(){
 	return 	ret;
 	
 }
-static struct Thread* do_thread_create(struct Fiber_Processi* str_processo, pid_t id){
+static struct Thread* do_thread_create(struct Process* str_processo, pid_t id){
 	
 	//printk(KERN_INFO "DEBUG DOTHREADCREATE\n");
 	struct Thread* str_thread =kzalloc(sizeof(struct Thread),GFP_KERNEL);
@@ -727,7 +748,7 @@ static struct Thread* do_thread_create(struct Fiber_Processi* str_processo, pid_
 
 }
 
-static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_pointer, unsigned long stack_size,struct Fiber_Processi* str_processo,int flag){
+static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_pointer, unsigned long stack_size,struct Process* str_processo,int flag){
 	//printk(KERN_INFO "DEBUG DOFIBCREATE\n");
 
 	
@@ -799,7 +820,7 @@ static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_poin
 
 
 static struct Fiber* fib_create(void* func, void* parameters,void *stack_pointer, unsigned long stack_size){
-	struct Fiber_Processi* fiber_processo;
+	struct Process* fiber_processo;
 	struct Fiber* lista_fiber_elem;
 
 	//Itera sulla lista processi
@@ -825,7 +846,7 @@ static struct Fiber* fib_create(void* func, void* parameters,void *stack_pointer
 }
 static long fib_switch_to(pid_t id){
 
-	struct Fiber_Processi* fiber_processo;
+	struct Process* fiber_processo;
 	struct Thread* lista_thread_iter;
 
 	struct Fiber* lista_fiber_iter_new;
@@ -951,7 +972,7 @@ static long fib_switch_to(pid_t id){
 static long flsAlloc(){
 
 	
-	struct Fiber_Processi* fiber_processo;
+	struct Process* fiber_processo;
 	struct Thread* lista_thread_iter;
 
 	long index=-1;
@@ -1010,7 +1031,7 @@ static long flsAlloc(){
 
 static bool flsFree(long index){
 
-	struct Fiber_Processi* fiber_processo;
+	struct Process* fiber_processo;
 	struct Fiber* running_fiber;
 	struct Thread* lista_thread_iter;
 	//printk(KERN_INFO "DEBUG FLSFREE \n");
@@ -1064,7 +1085,7 @@ static bool flsFree(long index){
 
 static long long flsGetValue(long pos){
 	
-	struct Fiber_Processi* fiber_processo;
+	struct Process* fiber_processo;
 	struct Thread* lista_thread_iter;
 	//printk(KERN_INFO "DEBUG FLSGET \n");
 
@@ -1119,7 +1140,7 @@ static long long flsGetValue(long pos){
 
 static void flsSetValue(long pos, long long val){
 	
-	struct Fiber_Processi* fiber_processo;
+	struct Process* fiber_processo;
 	struct Thread* lista_thread_iter;
 	//printk(KERN_INFO "DEBUG FLSSET\n");
 
