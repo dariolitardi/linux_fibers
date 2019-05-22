@@ -25,23 +25,24 @@ struct Fiber{
 
 
 struct Fiber_Stuff{
+	struct hlist_node node;
 	struct pid_entry* fiber_base_stuff;
 	int len_fiber_stuff;
 };
 
 struct Thread {
-        struct hlist_node node;
-        struct Fiber *runner;
-        pid_t id; 
-
+    struct hlist_node node;
+    struct Fiber *runner;
+	pid_t id;
 };
 
 //Process
+
 struct Process{
 	struct hlist_node node;
 	DECLARE_HASHTABLE(listathread, 10);
     DECLARE_HASHTABLE(listafiber, 10);
-	struct Fiber_Stuff fiber_stuff;
+    DECLARE_HASHTABLE(listafiber_stuff, 10);
 	pid_t last_fib_id;
 	pid_t id;
 };

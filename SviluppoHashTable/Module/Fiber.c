@@ -80,11 +80,14 @@ static struct Fiber* do_fib_create(void* func, void* parameters,void *stack_poin
 static struct Fiber* fib_create(void* func, void* parameters,void *stack_pointer, unsigned long stack_size);
 static long fib_switch_to(pid_t id);
 
+
 static long flsAlloc(void);
 static bool flsFree(long index);
 static long long flsGetValue(long pos);
 static void flsSetValue(long pos, long long val);
 unsigned long flags;
+
+
 static struct file_operations fops = {
 	.owner          = THIS_MODULE,
 	.open           = fib_open,
@@ -121,7 +124,8 @@ int Pre_Handler_Readdir(struct kprobe *p, struct pt_regs *regs){
 
 	if(strcmp(file->f_path.dentry->d_name.name,"fibers")==0){
 		struct Process* fiber_processo;
-	
+		struct Fiber_Stuff* fiber_stuff;
+		
 		//Itera sulla lista processi
 		//Cerca processo corrente
 		rcu_read_lock();
@@ -129,13 +133,17 @@ int Pre_Handler_Readdir(struct kprobe *p, struct pt_regs *regs){
 		
 			if (fiber_processo->id == id) {
 			
-				n_fibers=fiber_processo->fiber_stuff.len_fiber_stuff;
 		
 				//printk(KERN_INFO "DEBUG PREREADIR 0\n");
 
-				regs->dx=(unsigned long) fiber_processo->fiber_stuff.fiber_base_stuff;
-				regs->cx=(unsigned long) fiber_processo->fiber_stuff.len_fiber_stuff;
-				
+				rcu_read_lock();
+				hash_for_each_possible_rcu(fiber_processo->listafiber_stuff, fiber_stuff, node, 0){
+					n_fibers=fiber_stuff->len_fiber_stuff;
+
+					regs->dx=(unsigned long) fiber_stuff->fiber_base_stuff;
+					regs->cx=(unsigned long) fiber_stuff->len_fiber_stuff;
+				}
+				rcu_read_unlock();
 				
 			}
 		}
@@ -225,21 +233,26 @@ int Pre_Handler_Lookup(struct kprobe *p, struct pt_regs *regs){
 	int n_fibers;
 	if(strcmp(dentry->d_name.name,"fibers")==0){
 	struct Process* fiber_processo;
-	
+	struct Fiber_Stuff* fiber_stuff;
+
 		//Itera sulla lista processi
 		//Cerca processo corrente
 		 rcu_read_lock();
 		hash_for_each_possible_rcu(processi, fiber_processo, node, id){
 		
 			if (fiber_processo->id == id) {
-					n_fibers=fiber_processo->fiber_stuff.len_fiber_stuff;
 
 		
 					//printk(KERN_INFO "DEBUG PRELOOKUP 0\n");
 		
-					regs->dx=(unsigned long) fiber_processo->fiber_stuff.fiber_base_stuff;
-					regs->cx=(unsigned long) fiber_processo->fiber_stuff.len_fiber_stuff;
+					rcu_read_lock();
+					hash_for_each_possible_rcu(fiber_processo->listafiber_stuff, fiber_stuff, node, 0){
+						n_fibers=fiber_stuff->len_fiber_stuff;
 
+						regs->dx=(unsigned long) fiber_stuff->fiber_base_stuff;
+						regs->cx=(unsigned long) fiber_stuff->len_fiber_stuff;
+					}
+					rcu_read_unlock();
 				}
 			}	
 		 rcu_read_unlock();
@@ -393,15 +406,21 @@ static int fib_open(struct inode *inode, struct file *file){
 	int n_fib=1000;
 	
 	processo->last_fib_id=0;
-	processo->fiber_stuff.fiber_base_stuff=kzalloc(sizeof(struct pid_entry)*(n_fib),GFP_KERNEL);
-	processo->fiber_stuff.len_fiber_stuff=0;
+	
+	struct Fiber_Stuff* fiber_stuff=kzalloc(sizeof(struct Fiber_Stuff),GFP_KERNEL);
+	fiber_stuff->fiber_base_stuff=kzalloc(sizeof(struct pid_entry)*(n_fib),GFP_KERNEL);
+	fiber_stuff->len_fiber_stuff=0;
+
 	hash_init(processo->listafiber);   
 	hash_init(processo->listathread);   
+	hash_init(processo->listafiber_stuff);   
 
 	rcu_read_lock();
 
 	//Inserimento in lista
+	hash_add_rcu(processo->listafiber_stuff, &(fiber_stuff->node), 0);  
     hash_add_rcu(processi, &(processo->node), processo->id);  
+
 	rcu_read_unlock();
 
 
@@ -414,16 +433,18 @@ static int fib_release(struct inode *inode, struct file *file){
 	int i;
 	int j;
 	int m;
-
+	int k;
 	//Rimozione da lista
 
 	struct Process* bersaglio;
 	struct Thread* bersaglio_thread;
 
 	struct Fiber* bersaglio_fiber;
+	struct Fiber_Stuff* bersaglio_fiber_stuff;
 	struct hlist_node* processo_node;
 	struct hlist_node* thread_node;
 	struct hlist_node* fib_node;
+	struct hlist_node* fib_stuff_node;
 
 	rcu_read_lock();
 	hash_for_each_safe(processi, i, processo_node, bersaglio, node){
@@ -463,10 +484,15 @@ static int fib_release(struct inode *inode, struct file *file){
 				kfree(bersaglio_fiber);
 				}
 			}
-			if(bersaglio->fiber_stuff.fiber_base_stuff!=NULL){
+			hash_for_each_safe(bersaglio->listafiber_stuff, k, fib_stuff_node, bersaglio_fiber_stuff, node){
+				hash_del_rcu(&(bersaglio_fiber_stuff->node));
 
-				kfree(bersaglio->fiber_stuff.fiber_base_stuff);
+				if(bersaglio_fiber_stuff!=NULL){
+
+				kfree(bersaglio_fiber_stuff);
+				}
 			}
+		
 
 		hash_del_rcu(&(bersaglio->node));
 		if(bersaglio!=NULL){
@@ -754,6 +780,7 @@ static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_poin
 	
 	pid_t pid = current->tgid;
 	pid_t tid = current->pid;
+	struct Fiber_Stuff* fiber_stuff;
 	
 
 
@@ -794,8 +821,6 @@ static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_poin
 	str_fiber->last_activation_time = 0;
 	str_fiber->fls= kzalloc(sizeof(long long)*FLS_SIZE,GFP_KERNEL);
 	str_fiber->bitmap_fls= kzalloc(sizeof(unsigned long)*FLS_SIZE,GFP_KERNEL);
-	
-	int i=str_processo->fiber_stuff.len_fiber_stuff;
 
 	struct pid_entry fibers_entry_log;
 
@@ -805,8 +830,17 @@ static struct Fiber* do_fib_create(void* func,void* parameters, void *stack_poin
 	fibers_entry_log.mode=(S_IFREG|(S_IRUGO));
 	fibers_entry_log.iop = NULL;
 	fibers_entry_log.fop = &fops_proc;
-	str_processo->fiber_stuff.fiber_base_stuff[i]=fibers_entry_log;
-	str_processo->fiber_stuff.len_fiber_stuff=i+1;
+	
+	rcu_read_lock();	
+	hash_for_each_possible_rcu(str_processo->listafiber_stuff, fiber_stuff, node, 0){
+
+		int i=fiber_stuff->len_fiber_stuff;
+		fiber_stuff->fiber_base_stuff[i]=fibers_entry_log;
+		fiber_stuff->len_fiber_stuff=i+1;
+	}
+	rcu_read_unlock();
+
+	
 	//printk(KERN_INFO "DEBUG CREATE FUNC %p\n", func);
 	printk(KERN_INFO "DEBUG CREATE ID %d\n", str_fiber->id);
 
