@@ -1,0 +1,306 @@
+-----------
+- START -
+-----------
+Testing 5
+---------
+All fibers are done!
+Time to initialize fibers: 0.000000
+Time to run do the work (per-fiber): 0.372200
+PID: 1756
+
+real	0m0,954s
+user	0m2,056s
+sys	0m0,164s
+All fibers are done!
+Time to initialize fibers: 0.000000
+Time to run do the work (per-fiber): 0.377000
+PID: 1762
+
+real	0m0,951s
+user	0m2,096s
+sys	0m0,136s
+All fibers are done!
+Time to initialize fibers: 0.000000
+Time to run do the work (per-fiber): 0.382200
+PID: 1766
+
+real	0m0,988s
+user	0m2,148s
+sys	0m0,148s
+All fibers are done!
+Time to initialize fibers: 0.000000
+Time to run do the work (per-fiber): 0.370400
+PID: 1770
+
+real	0m0,969s
+user	0m2,136s
+sys	0m0,120s
+All fibers are done!
+Time to initialize fibers: 0.000000
+Time to run do the work (per-fiber): 0.379800
+PID: 1774
+
+real	0m0,991s
+user	0m2,132s
+sys	0m0,148s
+----------
+Testing 10
+----------
+All fibers are done!
+Time to initialize fibers: 0.000000
+Time to run do the work (per-fiber): 0.374300
+PID: 1778
+
+real	0m1,540s
+user	0m4,304s
+sys	0m0,244s
+All fibers are done!
+Time to initialize fibers: 0.000000
+Time to run do the work (per-fiber): 0.386500
+PID: 1782
+
+real	0m1,697s
+user	0m4,548s
+sys	0m0,260s
+All fibers are done!
+Time to initialize fibers: 0.000000
+Time to run do the work (per-fiber): 0.380800
+PID: 1786
+
+real	0m2,015s
+user	0m4,696s
+sys	0m0,280s
+All fibers are done!
+Time to initialize fibers: 0.000000
+Time to run do the work (per-fiber): 0.379100
+PID: 1790
+
+real	0m1,648s
+user	0m4,404s
+sys	0m0,288s
+All fibers are done!
+Time to initialize fibers: 0.000000
+Time to run do the work (per-fiber): 0.373500
+PID: 1794
+
+real	0m1,604s
+user	0m4,436s
+sys	0m0,264s
+----------
+Testing 50
+----------
+All fibers are done!
+Time to initialize fibers: 0.001000
+Time to run do the work (per-fiber): 0.377000
+PID: 1798
+
+real	0m8,708s
+user	0m24,596s
+sys	0m1,328s
+All fibers are done!
+Time to initialize fibers: 0.001000
+Time to run do the work (per-fiber): 0.373140
+PID: 1806
+
+real	0m8,624s
+user	0m24,660s
+sys	0m1,128s
+All fibers are done!
+Time to initialize fibers: 0.000000
+Time to run do the work (per-fiber): 0.375280
+PID: 1810
+
+real	0m8,344s
+user	0m24,184s
+sys	0m1,272s
+All fibers are done!
+Time to initialize fibers: 0.000000
+Time to run do the work (per-fiber): 0.373900
+PID: 1814
+
+real	0m8,780s
+user	0m24,836s
+sys	0m1,180s
+All fibers are done!
+Time to initialize fibers: 0.000000
+Time to run do the work (per-fiber): 0.375880
+PID: 1818
+
+real	0m8,940s
+user	0m24,836s
+sys	0m1,252s
+-----------
+Testing 100
+-----------
+All fibers are done!
+Time to initialize fibers: 0.000000
+Time to run do the work (per-fiber): 0.372690
+PID: 1822
+
+real	0m17,996s
+user	0m50,196s
+sys	0m2,612s
+All fibers are done!
+Time to initialize fibers: 0.000000
+Time to run do the work (per-fiber): 0.373030
+PID: 1826
+
+real	0m18,559s
+user	0m50,492s
+sys	0m2,712s
+All fibers are done!
+Time to initialize fibers: 0.000000
+Time to run do the work (per-fiber): 0.370060
+PID: 1833
+
+real	0m18,323s
+user	0m50,284s
+sys	0m2,476s
+All fibers are done!
+Time to initialize fibers: 0.000000
+Time to run do the work (per-fiber): 0.374330
+PID: 1840
+
+real	0m17,337s
+user	0m49,536s
+sys	0m2,648s
+All fibers are done!
+Time to initialize fibers: 0.000000
+Time to run do the work (per-fiber): 0.373760
+PID: 1847
+
+real	0m17,917s
+user	0m49,920s
+sys	0m2,676s
+-----------
+Testing 250
+-----------
+All fibers are done!
+Time to initialize fibers: 0.001000
+Time to run do the work (per-fiber): 0.371304
+PID: 1854
+
+real	0m48,000s
+user	2m9,020s
+sys	0m6,676s
+All fibers are done!
+Time to initialize fibers: 0.001000
+Time to run do the work (per-fiber): 0.371112
+PID: 1862
+
+real	0m47,191s
+user	2m8,224s
+sys	0m6,236s
+All fibers are done!
+Time to initialize fibers: 0.001000
+Time to run do the work (per-fiber): 0.377104
+PID: 1869
+
+real	0m48,394s
+user	2m10,620s
+sys	0m6,668s
+All fibers are done!
+Time to initialize fibers: 0.001000
+Time to run do the work (per-fiber): 0.381372
+PID: 1877
+
+real	0m49,395s
+user	2m12,004s
+sys	0m6,596s
+All fibers are done!
+Time to initialize fibers: 0.001000
+Time to run do the work (per-fiber): 0.373592
+PID: 1901
+
+real	0m44,072s
+user	2m5,632s
+sys	0m6,532s
+-----------
+Testing 500
+-----------
+All fibers are done!
+Time to initialize fibers: 0.003000
+Time to run do the work (per-fiber): 0.371552
+PID: 1908
+
+real	1m26,048s
+user	4m8,548s
+sys	0m13,304s
+All fibers are done!
+Time to initialize fibers: 0.003000
+Time to run do the work (per-fiber): 0.371170
+PID: 1916
+
+real	1m38,285s
+user	4m20,344s
+sys	0m13,488s
+All fibers are done!
+Time to initialize fibers: 0.003000
+Time to run do the work (per-fiber): 0.371110
+PID: 1925
+
+real	1m32,023s
+user	4m15,228s
+sys	0m12,736s
+All fibers are done!
+Time to initialize fibers: 0.004000
+Time to run do the work (per-fiber): 0.370386
+PID: 1932
+
+real	1m31,236s
+user	4m13,644s
+sys	0m13,212s
+All fibers are done!
+Time to initialize fibers: 0.002000
+Time to run do the work (per-fiber): 0.369920
+PID: 1939
+
+real	1m27,946s
+user	4m10,108s
+sys	0m13,192s
+-----------
+Testing 750
+-----------
+All fibers are done!
+Time to initialize fibers: 0.006000
+Time to run do the work (per-fiber): 0.372555
+PID: 1950
+
+real	2m21,226s
+user	6m27,132s
+sys	0m19,152s
+All fibers are done!
+Time to initialize fibers: 0.017000
+Time to run do the work (per-fiber): 0.373529
+PID: 1957
+
+real	2m24,200s
+user	6m30,812s
+sys	0m19,032s
+All fibers are done!
+Time to initialize fibers: 0.035000
+Time to run do the work (per-fiber): 0.371019
+PID: 1965
+
+real	2m17,372s
+user	6m22,020s
+sys	0m19,736s
+All fibers are done!
+Time to initialize fibers: 0.005000
+Time to run do the work (per-fiber): 0.370875
+PID: 1973
+
+real	2m19,970s
+user	6m24,104s
+sys	0m19,812s
+All fibers are done!
+Time to initialize fibers: 0.003000
+Time to run do the work (per-fiber): 0.373093
+PID: 1988
+
+real	2m19,938s
+user	6m25,012s
+sys	0m19,240s
+-----------
+- END -
+-----------
